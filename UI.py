@@ -1,6 +1,6 @@
 import tkinter as tk
 from tkinter import filedialog, messagebox
-import Action
+import Action2_0
 import threading
 import os
 
@@ -10,7 +10,7 @@ score2 = None
 score3 = None
 score4 = None
 score5 = None
-video_fold_root_path = r"C:\Vision Record Video"
+video_fold_root_path = r"C:\Bilateral Coordination Record Video"
 video_slots = None
 
 
@@ -29,7 +29,7 @@ def update_grid(index, result=None, not_found=False):
 def run_all_actions(video_path):
     global video_fold_root_path
     filenames = [
-        "01.mp4", "02.mp4", "03.mp4", "04.mp4", "05.mp4",
+        "01.MOV", "02.MOV", "03.MOV", "04.MOV", "05.mp4",
         "06.mp4", "07.mp4", "08.mp4", "09.mp4", "10.mp4",
         "11.mp4", "12.mp4", "13.mp4", "14.mp4", "15.mp4"
     ]
@@ -43,7 +43,7 @@ def run_all_actions(video_path):
 
         # 動態取得類別名，例如 Action1、Action2...Action15
         action_class_name = f"Action{index + 1}"
-        action_class = getattr(Action, action_class_name, None)
+        action_class = getattr(Action2_0, action_class_name, None)
         print(action_class)
 
         if action_class is None:
@@ -51,13 +51,13 @@ def run_all_actions(video_path):
             print(f"找不到對應類別: {action_class_name}")
             return
 
+
         result = action_class(full_path)
-        result.main_function()
+        result.main_func()
         update_grid(index, result)
 
     for i, name in enumerate(filenames):
         threading.Thread(target=worker, args=(i, name)).start()
-
 # 動作處理函數
 def start_action():
     global file_var
