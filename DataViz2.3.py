@@ -59,6 +59,22 @@ def face_change_center(data):
 
     return data
 
+def pose_change_center(data):
+    # try:
+    def dis(k1, k2):  # distance of two point
+        d = pow(((k1[1] - k2[1]) * (k1[1] - k2[1]) + (k1[0] - k2[0]) * (k1[0] - k2[0])), .5)
+        return d
+    #normalization
+    for frame in range(len(data)):
+        unit = dis([data[11]['x'][frame], data[11]['y'][frame]], [data[23]['x'][frame], data[23]['y'][frame]])
+        center = [(data[11]['x'][frame] + data[12]['x'][frame]) / 2, (data[11]['y'][frame] + data[12]['y'][frame]) / 2]
+        for point in data.keys():
+            data[point]['x'][frame] = (data[point]['x'][frame]-center[0])/unit
+            data[point]['y'][frame] = (data[point]['y'][frame]-center[1])/unit
+    # except Exception as ex:
+    #     print(ex)
+    return data
+
 def animate_multiple_landmarks(xy_dict, video_frames, title="Landmark 動畫"):
     import matplotlib.pyplot as plt
     import matplotlib.animation as animation
@@ -240,7 +256,9 @@ class MediaPipeUI:
             all_ids = list(set(selected_ids + center_ids))  # 合併去重
             data = {i: {'x': [], 'y': [], 'valid': []} for i in all_ids}
         else:
-            data = {i: {'x': [], 'y': [], 'valid': []} for i in selected_ids}
+            center_ids = [11, 12, 23]
+            all_ids = list(set(selected_ids + center_ids))
+            data = {i: {'x': [], 'y': [], 'valid': []} for i in all_ids}
 
 
         with vision_landmarker.create_from_options(options) as landmarker:
@@ -281,7 +299,7 @@ class MediaPipeUI:
 
                     # 分別處理 Left / Right
                     for label, enabled in zip(["Left", "Right"], hands_selected):
-                        for idx in selected_ids:
+                        for idx in data.keys():
                             if enabled and label in detected_hands:
                                 hand = detected_hands[label]
                                 data[label][idx]['x'].append(hand[idx].x)
@@ -305,13 +323,13 @@ class MediaPipeUI:
                             data[i]['valid'].append(False)
                 else:
                     if results and len(results) > 0:
-                        for i in selected_ids:
+                        for i in data.keys():
                             data[i]['x'].append(results[0][i].x)
                             data[i]['y'].append(results[0][i].y)
                             data[i]['valid'].append(True)
                     else:
                         print(f"Frame {count_image}: 無偵測結果，補 0")
-                        for i in selected_ids:
+                        for i in data.keys():
                             data[i]['x'].append(np.nan)
                             data[i]['y'].append(np.nan)
                             data[i]['valid'].append(False)
@@ -371,6 +389,7 @@ class MediaPipeUI:
                 xy_dict[f"點 {i}"] = (x, y)
                 print(x, y)
         else:
+            data = pose_change_center(data)
             for i in selected_ids:
                 x = data[i]['x']
                 y = data[i]['y']
