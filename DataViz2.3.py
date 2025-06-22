@@ -60,19 +60,19 @@ def face_change_center(data):
     return data
 
 def pose_change_center(data):
-    # try:
-    def dis(k1, k2):  # distance of two point
-        d = pow(((k1[1] - k2[1]) * (k1[1] - k2[1]) + (k1[0] - k2[0]) * (k1[0] - k2[0])), .5)
-        return d
-    #normalization
-    for frame in range(len(data)):
-        unit = dis([data[11]['x'][frame], data[11]['y'][frame]], [data[23]['x'][frame], data[23]['y'][frame]])
-        center = [(data[11]['x'][frame] + data[12]['x'][frame]) / 2, (data[11]['y'][frame] + data[12]['y'][frame]) / 2]
-        for point in data.keys():
-            data[point]['x'][frame] = (data[point]['x'][frame]-center[0])/unit
-            data[point]['y'][frame] = (data[point]['y'][frame]-center[1])/unit
-    # except Exception as ex:
-    #     print(ex)
+    try:
+        def dis(k1, k2):  # distance of two point
+            d = pow(((k1[1] - k2[1]) * (k1[1] - k2[1]) + (k1[0] - k2[0]) * (k1[0] - k2[0])), .5)
+            return d
+        #normalization
+        for frame in range(len(data[next(iter(data))]['x'])):
+            unit = dis([data[11]['x'][frame], data[11]['y'][frame]], [data[23]['x'][frame], data[23]['y'][frame]])
+            center = [(data[11]['x'][frame] + data[12]['x'][frame]) / 2, (data[11]['y'][frame] + data[12]['y'][frame]) / 2]
+            for point in data.keys():
+                data[point]['x'][frame] = (data[point]['x'][frame]-center[0])/unit
+                data[point]['y'][frame] = (data[point]['y'][frame]-center[1])/unit
+    except Exception as ex:
+        print(ex)
     return data
 
 def animate_multiple_landmarks(xy_dict, video_frames, title="Landmark 動畫"):
@@ -92,21 +92,28 @@ def animate_multiple_landmarks(xy_dict, video_frames, title="Landmark 動畫"):
     for i, (label, (x, y)) in enumerate(xy_dict.items()):
         ax_x = axs[i][0] if len(xy_dict) > 1 else axs[0]
         ax_y = axs[i][1] if len(xy_dict) > 1 else axs[1]
+
         ax_x.set_title(f"{label} X軸變化")
         ax_y.set_title(f"{label} Y軸變化")
+
         ax_x.set_xlim(0, len(x))
         ax_y.set_xlim(0, len(y))
-        margin = 0.01
-        # ax_x.set_ylim(np.nanmin(x) - margin, np.nanmax(x) + margin)
-        center_x = (np.nanmax(x) + np.nanmin(x)) / 2
-        ax_x.set_ylim(center_x - 0.005, center_x + 0.005)
-        ax_y.set_ylim(np.nanmin(y) - margin, np.nanmax(y) + margin)
-        ax_x.yaxis.set_major_locator(MultipleLocator(0.001))
-        ax_y.yaxis.set_major_locator(MultipleLocator(0.002))
+
+        margin_ratio = 0.05
+        x_range = np.nanmax(x) - np.nanmin(x)
+        y_range = np.nanmax(y) - np.nanmin(y)
+
+        ax_x.set_ylim(np.nanmin(x) - x_range * margin_ratio, np.nanmax(x) + x_range * margin_ratio)
+        ax_y.set_ylim(np.nanmin(y) - y_range * margin_ratio, np.nanmax(y) + y_range * margin_ratio)
+
+        ax_x.yaxis.set_major_locator(MultipleLocator(x_range / 10))
+        ax_y.yaxis.set_major_locator(MultipleLocator(y_range / 10))
 
         line1, = ax_x.plot([], [], 'r-')
         line2, = ax_y.plot([], [], 'b-')
         lines.append((line1, line2))
+
+    plt.tight_layout()
 
     def update(frame):
         idx = shared_index.value % len(next(iter(xy_dict.values()))[0])
