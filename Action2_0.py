@@ -6,6 +6,7 @@ from mediapipe.tasks.python.vision import PoseLandmarkerOptions
 from mediapipe.tasks.python.vision import HandLandmarkerOptions
 from mediapipe.tasks.python.vision import FaceLandmarkerOptions
 import matplotlib.pyplot as plt
+from scipy.signal import find_peaks, peak_widths
 
 
 def pose_normalize(data):
@@ -24,7 +25,6 @@ def pose_normalize(data):
     except Exception as ex:
         print(ex)
     return data
-
 
 class MDP:
     def __init__(self):
@@ -139,6 +139,7 @@ class MDP:
                             data[count_image][model_type] = data.get(count_image - 1, {}).get(model_type, {})
                 count_image += 1
         finally:
+            print(f"Mediapipe processed images : {count_image}")
             cap.release()
         return data
 
@@ -153,14 +154,18 @@ class MDP:
             landmarker.close()
         self.landmarkers.clear()
 
-class PeakDataStruct:
-    def __init__(self, start=0.0, start_pos=0, end=0.0, end_pos=0, peak_max=0.0, peak_max_pos=0):
+class PoseDataStruct:
+    def __init__(self, start=0.0, start_pos=0, end=0.0, end_pos=0, peak_max=0.0, peak_max_pos=0, peak_width = 0):
         self.start = start
         self.start_pos = start_pos
         self.end = end
         self.end_pos = end_pos
         self.peak_max = peak_max
         self.peak_max_pos = peak_max_pos
+        self.peak_width = peak_width
+
+class HandData:
+    pass
 
 class Action1:
     def __init__(self, path):
@@ -173,38 +178,43 @@ class Action1:
         for mt in self.config.keys():
             if mt == "pose":
                 data = pose_normalize(data)
+                x = numpy.array(
+                    [numpy.array([data[frame]['pose'][point]['y'] for frame in range(len(data))]) for point in
+                     self.config[mt]])
+                for i, point in enumerate(self.config[mt]):
+                    peaks, peak_height = find_peaks(x[i], height=x[i].mean(), distance = 5)
+                    widths, heights, left_ips, right_ips = peak_widths(x[i], peaks)
+                    temp = []
+                    for p in range(len(peaks)):
+                        t = PoseDataStruct()
+                        t.peak_max_pos = peaks[p]
+                        t.peak_max = peak_height['peak_heights'][p]
+
+                        t.peak_width = widths[p]
+                        t.start = t.end = heights[p]
+                        t.start_pos = left_ips[p]
+                        t.end_pos = right_ips[p]
+
+                        temp.append(t)
+
+                    info[point] = temp
             # if mt == "face":
             #     data = face_normalize(data)
             # if mt == "hand":
             #     data = hands_normalize(data)
-            for point in self.config[mt]:
-                peak_detect = False
-                temp = []
-                process_data = [data[i][mt][point]['y'] for i in range(len(data))]
-                process_data = numpy.array(process_data)
-                data_mean = process_data.mean() + mean_offset  # 0.01 為了避免不相干的動作突破門檻
-                print(f"data_mean : {data_mean}")
-                peak_recorder = None
-                for frame in range(len(data) - forward_find):
-                    if not peak_detect and peak_recorder is None and data[frame + forward_find][mt][point]['y'] > data_mean:  # 偵測變化是否超過平均值
-                        peak_detect = True
-                        peak_recorder = PeakDataStruct(start=data[frame][mt][point]['y'], start_pos=frame)
-                    elif peak_detect and peak_recorder is not None and data[frame][mt][point]['y'] < data_mean and frame > peak_recorder.start_pos + 5:
-                        peak_detect = False
-                        peak_recorder.end = data[frame + forward_find][mt][point]['y']
-                        peak_recorder.end_pos = frame + forward_find
-                        temp.append(peak_recorder)
-                        peak_recorder = None # 重置 peak_recorder
-                    if peak_detect:
-                        # 確保只有在 peak_recorder 已正確初始化時才訪問它
-                        try:
-                            if data[frame][mt][point]['y'] > peak_recorder.peak_max:
-                                peak_recorder.peak_max = data[frame][mt][point]['y']
-                                peak_recorder.peak_max_pos = frame
-                        except TypeError:
-                            print("Here is no peak_recorder")
+        """輸出測試"""
+        for point in info.keys():
+            print(f"point {point}")
+            for i, st in enumerate(info[point]):
+                print(f"peak {i}")
+                print(f"peak_max {st.peak_max}")
+                print(f"peak_max_pos {st.peak_max_pos}")
+                print(f"peak_width {st.peak_width}\n")
+                print(f"start {st.start}")
+                print(f"start_pos {st.start_pos}\n")
+                print(f"end {st.end}")
+                print(f"end_pos {st.end_pos}\n")
 
-                info[point] = temp
         return info
 
     def count_score(self, raw_data):
@@ -225,14 +235,17 @@ class Action1:
             if i != 0:
                 two_peak_maximum_pos_gap.append(data[i].peak_max_pos - data[i - 1].peak_max_pos)
                 two_peak_distance.append(data[i].start_pos - data[i - 1].end_pos)
-        print(peak_width)
-        print(two_peak_maximum_pos_gap)
-        print(two_peak_distance)#目前沒使用
-        print(st_to_max_to_end_diff)
+        """輸出測試"""
+        # print(f"Action1\n")
+        # print(f"peak_width {peak_width}")
+        # print(f"two_peak_maximum_pos_gap {two_peak_maximum_pos_gap}")
+        # print(f"two_peak_distance {two_peak_distance}")  # 目前沒使用
+        # print(f"st_to_max_to_end_diff {st_to_max_to_end_diff}")
 
         # score judgement
         # 第一個判斷 拍六下 每下10分 共60分
         temp_score = 60
+        print(f"test 1 \n data length : {len(data)}")
         if len(data) == 6:
             score += temp_score
         else:
@@ -277,6 +290,11 @@ class Action1:
             temp_sc = 0
         self.score[3] = temp_sc
         score += temp_sc
+
+        """輸出測試"""
+        for i, sc in enumerate(self.score):
+            print(f"test{i} : {sc}")
+
         print(f"score: {score}")
         if score >= 80:
             print(f"很棒")
@@ -302,40 +320,42 @@ class Action2:
         for mt in self.config.keys():
             if mt == "pose":
                 data = pose_normalize(data)
+                x = numpy.array(
+                    [numpy.array([data[frame]['pose'][point]['y'] for frame in range(len(data))]) for point in self.config[mt]])
+                for i, point in enumerate(self.config[mt]):
+                    peaks, peak_height = find_peaks(x[i], height=x[i].mean())
+                    widths, heights, left_ips, right_ips = peak_widths(x[i], peaks)
+                    temp = []
+                    for p in range(len(peaks)):
+                        t = PoseDataStruct()
+                        t.peak_max_pos =  peaks[p]
+                        t.peak_max = peak_height['peak_heights'][p]
+
+                        t.peak_width = widths[p]
+                        t.start = t.end = heights[p]
+                        t.start_pos = left_ips[p]
+                        t.end_pos = right_ips[p]
+
+                        temp.append(t)
+
+                    info[point] = temp
             # if mt == "face":
             #     data = face_normalize(data)
             # if mt == "hand":
             #     data = hands_normalize(data)
-            for point in self.config[mt]:
-                peak_detect = False
-                temp = []
-                process_data = [data[i][mt][point]['y'] for i in range(len(data))]
-                process_data = numpy.array(process_data)
-                data_mean = process_data.mean() + mean_offset  # 0.01 為了避免不相干的動作突破門檻
-                print(f"data_mean : {data_mean}")
-                peak_recorder = None
-                for frame in range(len(data) - forward_find):
-                    if not peak_detect and peak_recorder is None and data[frame + forward_find][mt][point][
-                        'y'] > data_mean:  # 偵測變化是否超過平均值
-                        peak_detect = True
-                        peak_recorder = PeakDataStruct(start=data[frame][mt][point]['y'], start_pos=frame)
-                    elif peak_detect and peak_recorder is not None and data[frame][mt][point][
-                        'y'] < data_mean and frame > peak_recorder.start_pos + 5:
-                        peak_detect = False
-                        peak_recorder.end = data[frame + forward_find][mt][point]['y']
-                        peak_recorder.end_pos = frame + forward_find
-                        temp.append(peak_recorder)
-                        peak_recorder = None  # 重置 peak_recorder
-                    if peak_detect:
-                        # 確保只有在 peak_recorder 已正確初始化時才訪問它
-                        try:
-                            if data[frame][mt][point]['y'] > peak_recorder.peak_max:
-                                peak_recorder.peak_max = data[frame][mt][point]['y']
-                                peak_recorder.peak_max_pos = frame
-                        except TypeError:
-                            print("Here is no peak_recorder")
+        """輸出測試"""
+        # for point in info.keys():
+        #     print(f"point {point}")
+        #     for i, st in enumerate(info[point]):
+        #         print(f"peak {i}")
+        #         print(f"peak_max {st.peak_max}")
+        #         print(f"peak_max_pos {st.peak_max_pos}")
+        #         print(f"peak_width {st.peak_width}\n")
+        #         print(f"start {st.start}")
+        #         print(f"start_pos {st.start_pos}\n")
+        #         print(f"end {st.end}")
+        #         print(f"end_pos {st.end_pos}\n")
 
-                info[point] = temp
         return info
 
     def count_score(self, raw_data):
@@ -357,10 +377,13 @@ class Action2:
             if i != 0:
                 two_peak_maximum_pos_gap.append(data[i].peak_max_pos - data[i - 1].peak_max_pos)
                 two_peak_distance.append(data[i].start_pos - data[i - 1].end_pos)
-        print(peak_width)
-        print(two_peak_maximum_pos_gap)
-        print(two_peak_distance)  # 目前沒使用
-        print(st_to_max_to_end_diff)
+
+        """輸出測試"""
+        # print(f"Action2\n")
+        # print(peak_width)
+        # print(two_peak_maximum_pos_gap)
+        # print(two_peak_distance)  # 目前沒使用
+        # print(st_to_max_to_end_diff)
 
         # score judgement
         # 第一個判斷 拍六下 每下10分 共60分
@@ -434,40 +457,43 @@ class Action3:
         for mt in self.config.keys():
             if mt == "pose":
                 data = pose_normalize(data)
+                x = numpy.array(
+                    [numpy.array([data[frame]['pose'][point]['y'] for frame in range(len(data))]) for point in
+                     self.config[mt]])
+                for i, point in enumerate(self.config[mt]):
+                    peaks, peak_height = find_peaks(x[i], height=x[i].mean())
+                    widths, heights, left_ips, right_ips = peak_widths(x[i], peaks)
+                    temp = []
+                    for p in range(len(peaks)):
+                        t = PoseDataStruct()
+                        t.peak_max_pos = peaks[p]
+                        t.peak_max = peak_height['peak_heights'][p]
+
+                        t.peak_width = widths[p]
+                        t.start = t.end = heights[p]
+                        t.start_pos = left_ips[p]
+                        t.end_pos = right_ips[p]
+
+                        temp.append(t)
+
+                    info[point] = temp
             # if mt == "face":
             #     data = face_normalize(data)
             # if mt == "hand":
             #     data = hands_normalize(data)
-            for point in self.config[mt]:
-                peak_detect = False
-                temp = []
-                process_data = [data[i][mt][point]['y'] for i in range(len(data))]
-                process_data = numpy.array(process_data)
-                data_mean = process_data.mean() + mean_offset  # 0.01 為了避免不相干的動作突破門檻
-                print(f"data_mean : {data_mean}")
-                peak_recorder = None
-                for frame in range(len(data) - forward_find):
-                    if not peak_detect and peak_recorder is None and data[frame + forward_find][mt][point][
-                        'y'] > data_mean:  # 偵測變化是否超過平均值
-                        peak_detect = True
-                        peak_recorder = PeakDataStruct(start=data[frame][mt][point]['y'], start_pos=frame)
-                    elif peak_detect and peak_recorder is not None and data[frame][mt][point][
-                        'y'] < data_mean and frame > peak_recorder.start_pos + 5:
-                        peak_detect = False
-                        peak_recorder.end = data[frame + forward_find][mt][point]['y']
-                        peak_recorder.end_pos = frame + forward_find
-                        temp.append(peak_recorder)
-                        peak_recorder = None  # 重置 peak_recorder
-                    if peak_detect:
-                        # 確保只有在 peak_recorder 已正確初始化時才訪問它
-                        try:
-                            if data[frame][mt][point]['y'] > peak_recorder.peak_max:
-                                peak_recorder.peak_max = data[frame][mt][point]['y']
-                                peak_recorder.peak_max_pos = frame
-                        except TypeError:
-                            print("Here is no peak_recorder")
+        """輸出測試"""
+        # for point in info.keys():
+        #     print(f"point {point}")
+        #     for i, st in enumerate(info[point]):
+        #         print(f"peak {i}")
+        #         print(f"peak_max {st.peak_max}")
+        #         print(f"peak_max_pos {st.peak_max_pos}")
+        #         print(f"peak_width {st.peak_width}\n")
+        #         print(f"start {st.start}")
+        #         print(f"start_pos {st.start_pos}\n")
+        #         print(f"end {st.end}")
+        #         print(f"end_pos {st.end_pos}\n")
 
-                info[point] = temp
         return info
 
     def count_score(self, raw_data):
@@ -489,10 +515,11 @@ class Action3:
             if i != 0:
                 two_peak_maximum_pos_gap.append(data[i].peak_max_pos - data[i - 1].peak_max_pos)
                 two_peak_distance.append(data[i].start_pos - data[i - 1].end_pos)
-        print(peak_width)
-        print(two_peak_maximum_pos_gap)
-        print(two_peak_distance)  # 目前沒使用
-        print(st_to_max_to_end_diff)
+        """輸出測試"""
+        # print(f"peak_width {peak_width}")
+        # print(f"two_peak_maximum_pos_gap {two_peak_maximum_pos_gap}")
+        # print(f"two_peak_distance {two_peak_distance}")  # 目前沒使用
+        # print(f"st_to_max_to_end_diff {st_to_max_to_end_diff}")
 
         # score judgement
         # 第一個判斷 拍六下 每下10分 共60分
@@ -557,7 +584,7 @@ class Action3:
 
 class Action4:
     def __init__(self, path):
-        self.config = {'pose': [15, 16]}
+        self.config = {'pose': [15, 16], 'hand' : [4, 20]}
         self.video_path = path
         self.score = [0 for _ in range(4)]
 
@@ -582,7 +609,7 @@ class Action4:
                     if not peak_detect and peak_recorder is None and data[frame + forward_find][mt][point][
                         'y'] > data_mean:  # 偵測變化是否超過平均值
                         peak_detect = True
-                        peak_recorder = PeakDataStruct(start=data[frame][mt][point]['y'], start_pos=frame)
+                        peak_recorder = PoseDataStruct(start=data[frame][mt][point]['y'], start_pos=frame)
                     elif peak_detect and peak_recorder is not None and data[frame][mt][point][
                         'y'] < data_mean and frame > peak_recorder.start_pos + 5:
                         peak_detect = False
@@ -714,7 +741,7 @@ class Action5:
                     if not peak_detect and peak_recorder is None and data[frame + forward_find][mt][point][
                         'y'] > data_mean:  # 偵測變化是否超過平均值
                         peak_detect = True
-                        peak_recorder = PeakDataStruct(start=data[frame][mt][point]['y'], start_pos=frame)
+                        peak_recorder = PoseDataStruct(start=data[frame][mt][point]['y'], start_pos=frame)
                     elif peak_detect and peak_recorder is not None and data[frame][mt][point][
                         'y'] < data_mean and frame > peak_recorder.start_pos + 5:
                         peak_detect = False
@@ -822,12 +849,15 @@ class Action5:
 
 #測試用
 if __name__ == "__main__":
-    mdp  = MDP()
-    landmark_config = {
-        #"pose": [0, 11, 12],  # nose, left shoulder, right shoulder
-        # "hand": [4, 8],  # thumb_tip, index_tip
-        "face": [468, 473]  # left eye, chin
-    }
-    result = mdp.get_data(r"C:\Users\fangt\Downloads\01.mp4", landmark_config)
-    print(result)
-    mdp.close()
+    # mdp  = MDP()
+    # landmark_config = {
+    #     "pose": [15, 16],  # nose, left shoulder, right shoulder
+    #     # "hand": [4, 8],  # thumb_tip, index_tip
+    #     # "face": [468, 473]  # left eye, chin
+    # }
+    # result = mdp.get_data(r"C:\Users\fangt\Desktop\YU\python_ui\BLC_judge\Bilateral-Coordination\video_input\demo_video\02.MOV", landmark_config)
+    # # print(result)
+    # mdp.close()
+
+    AC3 = Action3(r"C:\Users\fangt\Desktop\YU\python_ui\BLC_judge\Bilateral-Coordination\video_input\demo_video\03 .MOV")
+    AC3.main_func()
