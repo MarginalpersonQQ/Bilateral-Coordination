@@ -10,8 +10,10 @@ import os
 import matplotlib
 from multiprocessing import Process
 from matplotlib.ticker import MultipleLocator
+import pandas as pd
 import cv2
 import numpy as np
+from scipy.signal import savgol_filter, find_peaks
 matplotlib.rcParams['font.family'] = 'Microsoft JhengHei'
 matplotlib.rcParams['axes.unicode_minus'] = False
 
@@ -131,7 +133,7 @@ def animate_multiple_landmarks(xy_dict, video_frames, title="Landmark 動畫"):
             shared_index.value = i % len(video_frames)
             i += 1
             cv2.imshow("Video", frame)
-            if cv2.waitKey(30) & 0xFF == ord('q'):
+            if cv2.waitKey(120) & 0xFF == ord('q'):
                 break
 
     from threading import Thread
@@ -226,7 +228,7 @@ class MediaPipeUI:
 
         part = self.selected_part.get()
         offset = 2 if part == "Hands" else 0
-        selected_ids = [i + offset for i, var in enumerate(self.landmark_vars[offset:]) if var.get()]
+        selected_ids = [i  for i, var in enumerate(self.landmark_vars[offset:]) if var.get()]
         hands_selected = [self.landmark_vars[0].get(), self.landmark_vars[1].get()] if part == "Hands" else [False, False]
 
         if not selected_ids:
@@ -300,19 +302,24 @@ class MediaPipeUI:
                         result.handedness[i][0].category_name: result.hand_landmarks[i]
                         for i in range(len(result.hand_landmarks))
                     }
+
+                    label_to_index = {
+                        result.handedness[i][0].category_name: i
+                        for i in range(len(result.hand_landmarks))
+                    }
                     # 如果使用者要求偵測左右手但目前缺其中一手，則跳過整幀
-                    if hands_selected == [True, True] and not all(label in detected_hands for label in ["Left", "Right"]):
-                        print(f"Frame {count_image}: 僅偵測到一隻手，補 0")
+                    # if hands_selected == [True, True] and not all(label in detected_hands for label in ["Left", "Right"]):
+                    #     print(f"Frame {count_image}: 僅偵測到一隻手，補 0")
 
                     # 分別處理 Left / Right
                     for label, enabled in zip(["Left", "Right"], hands_selected):
-                        for idx in data.keys():
-                            if enabled and label in detected_hands:
+                        for idx in data[label].keys():
+                            if enabled and label in detected_hands:  #and result.handedness[label_to_index[label]][0].score >= 0.98
                                 hand = detected_hands[label]
                                 data[label][idx]['x'].append(hand[idx].x)
                                 data[label][idx]['y'].append(hand[idx].y)
                                 data[label][idx]['valid'].append(True)
-                            elif enabled:
+                            else:
                                 data[label][idx]['x'].append(np.nan)
                                 data[label][idx]['y'].append(np.nan)
                                 data[label][idx]['valid'].append(False)
@@ -342,7 +349,7 @@ class MediaPipeUI:
                             data[i]['valid'].append(False)
                 frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
 
-                # 拿來畫圖的 landmark
+                # 拿來畫在影片上的 landmark
                 if part == "Pose":
                     landmark_to_draw = landmark_pb2.NormalizedLandmarkList()
                     for lm in result.pose_landmarks[0]:
@@ -387,6 +394,7 @@ class MediaPipeUI:
                     for i in selected_ids:
                         x = data[label][i]['x']
                         y = data[label][i]['y']
+
                         xy_dict[f"{label} 手 - 點 {i}"] = (x, y)
         elif part == "Face":
             data = face_change_center(data)
