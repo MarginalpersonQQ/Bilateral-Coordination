@@ -734,8 +734,1567 @@ class Action4:
         data = self.find_peak(row_data)
         self.count_score(data)
 
+class Action5:
+    def __init__(self, path):
+        self.config = {'pose': [11, 12, 15, 16]}
+        self.video_path = path
+        self.score = [0 for _ in range(4)]
+
+    def find_peak(self, data, forward_find=0, mean_offset=0.01):
+        info = {}  # return information
+        data = data_normalize(data)
+        for mt in self.config.keys():
+            if mt == "pose":
+                x = numpy.array(
+                    [numpy.array([data[frame]['pose'][point]['y'] for frame in range(len(data))]) for point in
+                     self.config[mt]])
+                for i, point in enumerate(self.config[mt]):
+                    peaks, peak_height = find_peaks(x[i], height=x[i].mean(), distance=10, prominence=0.3)
+                    widths, heights, left_ips, right_ips = peak_widths(x[i], peaks)
+                    temp = []
+                    for p in range(len(peaks)):
+                        t = PoseDataStruct()
+                        t.peak_max_pos = peaks[p]
+                        t.peak_max = peak_height['peak_heights'][p]
+
+                        t.peak_width = widths[p]
+                        t.start = t.end = heights[p]
+                        t.start_pos = left_ips[p]
+                        t.end_pos = right_ips[p]
+
+                        temp.append(t)
+
+                    info[point] = {mt : temp}
+            if mt == "hand":
+                    temp = []
+                    # for frame in range(len(data)):
+                    #     for hand_type in data[frame][mt].keys():
+                    #         if data[frame]
 
 
+            # if mt == "face":
+            #     data = face_normalize(data)
+
+        """輸出測試"""
+        # for point in info.keys():
+        #     print(f"point {point}")
+        #     for i, st in enumerate(info[point]):
+        #         print(f"peak {i}")
+        #         print(f"peak_max {st.peak_max}")
+        #         print(f"peak_max_pos {st.peak_max_pos}")
+        #         print(f"peak_width {st.peak_width}\n")
+        #         print(f"start {st.start}")
+        #         print(f"start_pos {st.start_pos}\n")
+        #         print(f"end {st.end}")
+        #         print(f"end_pos {st.end_pos}\n")
+
+        return info
+
+    def count_score(self, raw_data):
+        data = []
+        peak_width = []  # 波的寬度
+        two_peak_maximum_pos_gap = []  # 兩波峰的距離
+        two_peak_distance = []  # 前一個波的結束到下一個波的開始的距離
+        st_to_max_to_end_diff = []  # 下去 -> 上來的時間差距
+        num_of_peak = 6
+        score = 0
+        for point in self.config['pose']:
+            for i in range(len(raw_data[point])):
+                data.append(raw_data[point][i])
+        data.sort(key=lambda x: x.peak_max_pos)  # sort by peak maximum position
+        for i in range(len(data)):
+            peak_width.append(data[i].end_pos - data[i].start_pos)
+            st_to_max_to_end_diff.append(
+                abs((data[i].peak_max_pos - data[i].start_pos) - (data[i].end_pos - data[i].peak_max_pos)))
+            if i != 0:
+                two_peak_maximum_pos_gap.append(data[i].peak_max_pos - data[i - 1].peak_max_pos)
+                two_peak_distance.append(data[i].start_pos - data[i - 1].end_pos)
+        """輸出測試"""
+        # print(f"peak_width {peak_width}")
+        # print(f"two_peak_maximum_pos_gap {two_peak_maximum_pos_gap}")
+        # print(f"two_peak_distance {two_peak_distance}")
+        # print(f"st_to_max_to_end_diff {st_to_max_to_end_diff}")
+
+        # score judgement
+        # 第一個判斷 拍六下 每下10分 共60分
+        temp_score = 60
+        if len(data) == 12:
+            score += temp_score
+        else:
+            temp_score -= abs(6 - len(data)) * 5
+            score += max(temp_score, 0)
+        self.score[0] = max(temp_score, 0)
+        # 第二個判斷 每拍一下(上去+下來)的時間長度(差距越小越好) 共13分
+        peak_width = numpy.array(peak_width)
+        peak_width_mean = peak_width.mean()
+        temp_sc = 13
+        for i in range(len(peak_width)):
+            if abs(peak_width[i] - peak_width_mean) > 2:
+                temp_sc -= 2
+            elif abs(peak_width[i] - peak_width_mean) > 1:
+                temp_sc -= 1
+        if temp_sc < 0:
+            temp_sc = 0
+        self.score[1] = temp_sc
+        score += temp_sc
+        # 第三個判斷 拍一下間隔的時間(差距盡量要相同 越連續) 共13分
+        two_peak_maximum_pos_gap = numpy.array(two_peak_maximum_pos_gap)
+        two_peak_maximum_pos_gap_mean = two_peak_maximum_pos_gap.mean()
+        temp_sc = 13
+        for i in range(len(two_peak_maximum_pos_gap)):
+            if abs(two_peak_maximum_pos_gap[i] - two_peak_maximum_pos_gap_mean) > 3:
+                temp_sc -= 2
+            elif abs(two_peak_maximum_pos_gap[i] - two_peak_maximum_pos_gap_mean) > 2:
+                temp_sc -= 1
+        if temp_sc < 0:
+            temp_sc = 0
+        self.score[2] = temp_sc
+        score += temp_sc
+        # 第四個判斷 拍一下的流暢度(拍下去 與回到初始位置的時間) 共13分
+        st_to_max_to_end_diff = numpy.array(st_to_max_to_end_diff)
+        temp_sc = 13
+        for i in range(len(st_to_max_to_end_diff)):
+            if abs(st_to_max_to_end_diff[i]) > 6:
+                temp_sc -= 2
+            elif abs(st_to_max_to_end_diff[i]) > 5:
+                temp_sc -= 1
+        if temp_sc < 0:
+            temp_sc = 0
+        self.score[3] = temp_sc
+        score += temp_sc
+        print(f"score: {score}")
+        if score >= 80:
+            print(f"很棒")
+        elif score >= 70:
+            print(f"普通")
+        else:
+            print(f"很差")
+
+    def main_func(self):
+        mdp = MDP()
+        row_data = mdp.get_data(self.video_path, list(self.config.keys()))
+        data = self.find_peak(row_data)
+        self.count_score(data)
+
+class Action6:
+    def __init__(self, path):
+        self.config = {'pose': [0, 11, 12, 13, 14, 15, 16]}
+        self.video_path = path
+        self.score = [0 for _ in range(4)]
+
+    def find_peak(self, data, forward_find=0, mean_offset=0.01):
+        info = {}  # return information
+        data = data_normalize(data)
+        for mt in self.config.keys():
+            if mt == "pose":
+                x = numpy.array(
+                    [numpy.array([data[frame]['pose'][point]['y'] for frame in range(len(data))]) for point in
+                     self.config[mt]])
+                for i, point in enumerate(self.config[mt]):
+                    peaks, peak_height = find_peaks(x[i], height=x[i].mean(), distance=10, prominence=0.3)
+                    widths, heights, left_ips, right_ips = peak_widths(x[i], peaks)
+                    temp = []
+                    for p in range(len(peaks)):
+                        t = PoseDataStruct()
+                        t.peak_max_pos = peaks[p]
+                        t.peak_max = peak_height['peak_heights'][p]
+
+                        t.peak_width = widths[p]
+                        t.start = t.end = heights[p]
+                        t.start_pos = left_ips[p]
+                        t.end_pos = right_ips[p]
+
+                        temp.append(t)
+
+                    info[point] = {mt : temp}
+            if mt == "hand":
+                    temp = []
+                    # for frame in range(len(data)):
+                    #     for hand_type in data[frame][mt].keys():
+                    #         if data[frame]
+
+
+            # if mt == "face":
+            #     data = face_normalize(data)
+
+        """輸出測試"""
+        # for point in info.keys():
+        #     print(f"point {point}")
+        #     for i, st in enumerate(info[point]):
+        #         print(f"peak {i}")
+        #         print(f"peak_max {st.peak_max}")
+        #         print(f"peak_max_pos {st.peak_max_pos}")
+        #         print(f"peak_width {st.peak_width}\n")
+        #         print(f"start {st.start}")
+        #         print(f"start_pos {st.start_pos}\n")
+        #         print(f"end {st.end}")
+        #         print(f"end_pos {st.end_pos}\n")
+
+        return info
+
+    def count_score(self, raw_data):
+        data = []
+        peak_width = []  # 波的寬度
+        two_peak_maximum_pos_gap = []  # 兩波峰的距離
+        two_peak_distance = []  # 前一個波的結束到下一個波的開始的距離
+        st_to_max_to_end_diff = []  # 下去 -> 上來的時間差距
+        num_of_peak = 6
+        score = 0
+        for point in self.config['pose']:
+            for i in range(len(raw_data[point])):
+                data.append(raw_data[point][i])
+        data.sort(key=lambda x: x.peak_max_pos)  # sort by peak maximum position
+        for i in range(len(data)):
+            peak_width.append(data[i].end_pos - data[i].start_pos)
+            st_to_max_to_end_diff.append(
+                abs((data[i].peak_max_pos - data[i].start_pos) - (data[i].end_pos - data[i].peak_max_pos)))
+            if i != 0:
+                two_peak_maximum_pos_gap.append(data[i].peak_max_pos - data[i - 1].peak_max_pos)
+                two_peak_distance.append(data[i].start_pos - data[i - 1].end_pos)
+        """輸出測試"""
+        # print(f"peak_width {peak_width}")
+        # print(f"two_peak_maximum_pos_gap {two_peak_maximum_pos_gap}")
+        # print(f"two_peak_distance {two_peak_distance}")
+        # print(f"st_to_max_to_end_diff {st_to_max_to_end_diff}")
+
+        # score judgement
+        # 第一個判斷 拍六下 每下10分 共60分
+        temp_score = 60
+        if len(data) == 12:
+            score += temp_score
+        else:
+            temp_score -= abs(6 - len(data)) * 5
+            score += max(temp_score, 0)
+        self.score[0] = max(temp_score, 0)
+        # 第二個判斷 每拍一下(上去+下來)的時間長度(差距越小越好) 共13分
+        peak_width = numpy.array(peak_width)
+        peak_width_mean = peak_width.mean()
+        temp_sc = 13
+        for i in range(len(peak_width)):
+            if abs(peak_width[i] - peak_width_mean) > 2:
+                temp_sc -= 2
+            elif abs(peak_width[i] - peak_width_mean) > 1:
+                temp_sc -= 1
+        if temp_sc < 0:
+            temp_sc = 0
+        self.score[1] = temp_sc
+        score += temp_sc
+        # 第三個判斷 拍一下間隔的時間(差距盡量要相同 越連續) 共13分
+        two_peak_maximum_pos_gap = numpy.array(two_peak_maximum_pos_gap)
+        two_peak_maximum_pos_gap_mean = two_peak_maximum_pos_gap.mean()
+        temp_sc = 13
+        for i in range(len(two_peak_maximum_pos_gap)):
+            if abs(two_peak_maximum_pos_gap[i] - two_peak_maximum_pos_gap_mean) > 3:
+                temp_sc -= 2
+            elif abs(two_peak_maximum_pos_gap[i] - two_peak_maximum_pos_gap_mean) > 2:
+                temp_sc -= 1
+        if temp_sc < 0:
+            temp_sc = 0
+        self.score[2] = temp_sc
+        score += temp_sc
+        # 第四個判斷 拍一下的流暢度(拍下去 與回到初始位置的時間) 共13分
+        st_to_max_to_end_diff = numpy.array(st_to_max_to_end_diff)
+        temp_sc = 13
+        for i in range(len(st_to_max_to_end_diff)):
+            if abs(st_to_max_to_end_diff[i]) > 6:
+                temp_sc -= 2
+            elif abs(st_to_max_to_end_diff[i]) > 5:
+                temp_sc -= 1
+        if temp_sc < 0:
+            temp_sc = 0
+        self.score[3] = temp_sc
+        score += temp_sc
+        print(f"score: {score}")
+        if score >= 80:
+            print(f"很棒")
+        elif score >= 70:
+            print(f"普通")
+        else:
+            print(f"很差")
+
+    def main_func(self):
+        mdp = MDP()
+        row_data = mdp.get_data(self.video_path, list(self.config.keys()))
+        data = self.find_peak(row_data)
+        self.count_score(data)
+
+class Action7:
+    def __init__(self, path):
+        self.config = {'pose': [11, 12, 13, 14, 15, 16]}
+        self.video_path = path
+        self.score = [0 for _ in range(4)]
+
+    def find_peak(self, data, forward_find=0, mean_offset=0.01):
+        info = {}  # return information
+        data = data_normalize(data)
+        for mt in self.config.keys():
+            if mt == "pose":
+                x = numpy.array(
+                    [numpy.array([data[frame]['pose'][point]['y'] for frame in range(len(data))]) for point in
+                     self.config[mt]])
+                for i, point in enumerate(self.config[mt]):
+                    peaks, peak_height = find_peaks(x[i], height=x[i].mean(), distance=10, prominence=0.3)
+                    widths, heights, left_ips, right_ips = peak_widths(x[i], peaks)
+                    temp = []
+                    for p in range(len(peaks)):
+                        t = PoseDataStruct()
+                        t.peak_max_pos = peaks[p]
+                        t.peak_max = peak_height['peak_heights'][p]
+
+                        t.peak_width = widths[p]
+                        t.start = t.end = heights[p]
+                        t.start_pos = left_ips[p]
+                        t.end_pos = right_ips[p]
+
+                        temp.append(t)
+
+                    info[point] = {mt : temp}
+            if mt == "hand":
+                    temp = []
+                    # for frame in range(len(data)):
+                    #     for hand_type in data[frame][mt].keys():
+                    #         if data[frame]
+
+
+            # if mt == "face":
+            #     data = face_normalize(data)
+
+        """輸出測試"""
+        # for point in info.keys():
+        #     print(f"point {point}")
+        #     for i, st in enumerate(info[point]):
+        #         print(f"peak {i}")
+        #         print(f"peak_max {st.peak_max}")
+        #         print(f"peak_max_pos {st.peak_max_pos}")
+        #         print(f"peak_width {st.peak_width}\n")
+        #         print(f"start {st.start}")
+        #         print(f"start_pos {st.start_pos}\n")
+        #         print(f"end {st.end}")
+        #         print(f"end_pos {st.end_pos}\n")
+
+        return info
+
+    def count_score(self, raw_data):
+        data = []
+        peak_width = []  # 波的寬度
+        two_peak_maximum_pos_gap = []  # 兩波峰的距離
+        two_peak_distance = []  # 前一個波的結束到下一個波的開始的距離
+        st_to_max_to_end_diff = []  # 下去 -> 上來的時間差距
+        num_of_peak = 6
+        score = 0
+        for point in self.config['pose']:
+            for i in range(len(raw_data[point])):
+                data.append(raw_data[point][i])
+        data.sort(key=lambda x: x.peak_max_pos)  # sort by peak maximum position
+        for i in range(len(data)):
+            peak_width.append(data[i].end_pos - data[i].start_pos)
+            st_to_max_to_end_diff.append(
+                abs((data[i].peak_max_pos - data[i].start_pos) - (data[i].end_pos - data[i].peak_max_pos)))
+            if i != 0:
+                two_peak_maximum_pos_gap.append(data[i].peak_max_pos - data[i - 1].peak_max_pos)
+                two_peak_distance.append(data[i].start_pos - data[i - 1].end_pos)
+        """輸出測試"""
+        # print(f"peak_width {peak_width}")
+        # print(f"two_peak_maximum_pos_gap {two_peak_maximum_pos_gap}")
+        # print(f"two_peak_distance {two_peak_distance}")
+        # print(f"st_to_max_to_end_diff {st_to_max_to_end_diff}")
+
+        # score judgement
+        # 第一個判斷 拍六下 每下10分 共60分
+        temp_score = 60
+        if len(data) == 12:
+            score += temp_score
+        else:
+            temp_score -= abs(6 - len(data)) * 5
+            score += max(temp_score, 0)
+        self.score[0] = max(temp_score, 0)
+        # 第二個判斷 每拍一下(上去+下來)的時間長度(差距越小越好) 共13分
+        peak_width = numpy.array(peak_width)
+        peak_width_mean = peak_width.mean()
+        temp_sc = 13
+        for i in range(len(peak_width)):
+            if abs(peak_width[i] - peak_width_mean) > 2:
+                temp_sc -= 2
+            elif abs(peak_width[i] - peak_width_mean) > 1:
+                temp_sc -= 1
+        if temp_sc < 0:
+            temp_sc = 0
+        self.score[1] = temp_sc
+        score += temp_sc
+        # 第三個判斷 拍一下間隔的時間(差距盡量要相同 越連續) 共13分
+        two_peak_maximum_pos_gap = numpy.array(two_peak_maximum_pos_gap)
+        two_peak_maximum_pos_gap_mean = two_peak_maximum_pos_gap.mean()
+        temp_sc = 13
+        for i in range(len(two_peak_maximum_pos_gap)):
+            if abs(two_peak_maximum_pos_gap[i] - two_peak_maximum_pos_gap_mean) > 3:
+                temp_sc -= 2
+            elif abs(two_peak_maximum_pos_gap[i] - two_peak_maximum_pos_gap_mean) > 2:
+                temp_sc -= 1
+        if temp_sc < 0:
+            temp_sc = 0
+        self.score[2] = temp_sc
+        score += temp_sc
+        # 第四個判斷 拍一下的流暢度(拍下去 與回到初始位置的時間) 共13分
+        st_to_max_to_end_diff = numpy.array(st_to_max_to_end_diff)
+        temp_sc = 13
+        for i in range(len(st_to_max_to_end_diff)):
+            if abs(st_to_max_to_end_diff[i]) > 6:
+                temp_sc -= 2
+            elif abs(st_to_max_to_end_diff[i]) > 5:
+                temp_sc -= 1
+        if temp_sc < 0:
+            temp_sc = 0
+        self.score[3] = temp_sc
+        score += temp_sc
+        print(f"score: {score}")
+        if score >= 80:
+            print(f"很棒")
+        elif score >= 70:
+            print(f"普通")
+        else:
+            print(f"很差")
+
+    def main_func(self):
+        mdp = MDP()
+        row_data = mdp.get_data(self.video_path, list(self.config.keys()))
+        data = self.find_peak(row_data)
+        self.count_score(data)
+
+class Action8:
+    def __init__(self, path):
+        self.config = {'pose': [11, 12, 13, 14, 15, 16]}
+        self.video_path = path
+        self.score = [0 for _ in range(4)]
+
+    def find_peak(self, data, forward_find=0, mean_offset=0.01):
+        info = {}  # return information
+        data = data_normalize(data)
+        for mt in self.config.keys():
+            if mt == "pose":
+                x = numpy.array(
+                    [numpy.array([data[frame]['pose'][point]['y'] for frame in range(len(data))]) for point in
+                     self.config[mt]])
+                for i, point in enumerate(self.config[mt]):
+                    peaks, peak_height = find_peaks(x[i], height=x[i].mean(), distance=10, prominence=0.3)
+                    widths, heights, left_ips, right_ips = peak_widths(x[i], peaks)
+                    temp = []
+                    for p in range(len(peaks)):
+                        t = PoseDataStruct()
+                        t.peak_max_pos = peaks[p]
+                        t.peak_max = peak_height['peak_heights'][p]
+
+                        t.peak_width = widths[p]
+                        t.start = t.end = heights[p]
+                        t.start_pos = left_ips[p]
+                        t.end_pos = right_ips[p]
+
+                        temp.append(t)
+
+                    info[point] = {mt : temp}
+            if mt == "hand":
+                    temp = []
+                    # for frame in range(len(data)):
+                    #     for hand_type in data[frame][mt].keys():
+                    #         if data[frame]
+
+
+            # if mt == "face":
+            #     data = face_normalize(data)
+
+        """輸出測試"""
+        # for point in info.keys():
+        #     print(f"point {point}")
+        #     for i, st in enumerate(info[point]):
+        #         print(f"peak {i}")
+        #         print(f"peak_max {st.peak_max}")
+        #         print(f"peak_max_pos {st.peak_max_pos}")
+        #         print(f"peak_width {st.peak_width}\n")
+        #         print(f"start {st.start}")
+        #         print(f"start_pos {st.start_pos}\n")
+        #         print(f"end {st.end}")
+        #         print(f"end_pos {st.end_pos}\n")
+
+        return info
+
+    def count_score(self, raw_data):
+        data = []
+        peak_width = []  # 波的寬度
+        two_peak_maximum_pos_gap = []  # 兩波峰的距離
+        two_peak_distance = []  # 前一個波的結束到下一個波的開始的距離
+        st_to_max_to_end_diff = []  # 下去 -> 上來的時間差距
+        num_of_peak = 6
+        score = 0
+        for point in self.config['pose']:
+            for i in range(len(raw_data[point])):
+                data.append(raw_data[point][i])
+        data.sort(key=lambda x: x.peak_max_pos)  # sort by peak maximum position
+        for i in range(len(data)):
+            peak_width.append(data[i].end_pos - data[i].start_pos)
+            st_to_max_to_end_diff.append(
+                abs((data[i].peak_max_pos - data[i].start_pos) - (data[i].end_pos - data[i].peak_max_pos)))
+            if i != 0:
+                two_peak_maximum_pos_gap.append(data[i].peak_max_pos - data[i - 1].peak_max_pos)
+                two_peak_distance.append(data[i].start_pos - data[i - 1].end_pos)
+        """輸出測試"""
+        # print(f"peak_width {peak_width}")
+        # print(f"two_peak_maximum_pos_gap {two_peak_maximum_pos_gap}")
+        # print(f"two_peak_distance {two_peak_distance}")
+        # print(f"st_to_max_to_end_diff {st_to_max_to_end_diff}")
+
+        # score judgement
+        # 第一個判斷 拍六下 每下10分 共60分
+        temp_score = 60
+        if len(data) == 12:
+            score += temp_score
+        else:
+            temp_score -= abs(6 - len(data)) * 5
+            score += max(temp_score, 0)
+        self.score[0] = max(temp_score, 0)
+        # 第二個判斷 每拍一下(上去+下來)的時間長度(差距越小越好) 共13分
+        peak_width = numpy.array(peak_width)
+        peak_width_mean = peak_width.mean()
+        temp_sc = 13
+        for i in range(len(peak_width)):
+            if abs(peak_width[i] - peak_width_mean) > 2:
+                temp_sc -= 2
+            elif abs(peak_width[i] - peak_width_mean) > 1:
+                temp_sc -= 1
+        if temp_sc < 0:
+            temp_sc = 0
+        self.score[1] = temp_sc
+        score += temp_sc
+        # 第三個判斷 拍一下間隔的時間(差距盡量要相同 越連續) 共13分
+        two_peak_maximum_pos_gap = numpy.array(two_peak_maximum_pos_gap)
+        two_peak_maximum_pos_gap_mean = two_peak_maximum_pos_gap.mean()
+        temp_sc = 13
+        for i in range(len(two_peak_maximum_pos_gap)):
+            if abs(two_peak_maximum_pos_gap[i] - two_peak_maximum_pos_gap_mean) > 3:
+                temp_sc -= 2
+            elif abs(two_peak_maximum_pos_gap[i] - two_peak_maximum_pos_gap_mean) > 2:
+                temp_sc -= 1
+        if temp_sc < 0:
+            temp_sc = 0
+        self.score[2] = temp_sc
+        score += temp_sc
+        # 第四個判斷 拍一下的流暢度(拍下去 與回到初始位置的時間) 共13分
+        st_to_max_to_end_diff = numpy.array(st_to_max_to_end_diff)
+        temp_sc = 13
+        for i in range(len(st_to_max_to_end_diff)):
+            if abs(st_to_max_to_end_diff[i]) > 6:
+                temp_sc -= 2
+            elif abs(st_to_max_to_end_diff[i]) > 5:
+                temp_sc -= 1
+        if temp_sc < 0:
+            temp_sc = 0
+        self.score[3] = temp_sc
+        score += temp_sc
+        print(f"score: {score}")
+        if score >= 80:
+            print(f"很棒")
+        elif score >= 70:
+            print(f"普通")
+        else:
+            print(f"很差")
+
+    def main_func(self):
+        mdp = MDP()
+        row_data = mdp.get_data(self.video_path, list(self.config.keys()))
+        data = self.find_peak(row_data)
+        self.count_score(data)
+
+class Action9:
+    def __init__(self, path):
+        self.config = {'hand' : [4, 8, 12, 16, 20]}
+        self.video_path = path
+        self.score = [0 for _ in range(4)]
+
+    def find_peak(self, data, forward_find=0, mean_offset=0.01):
+        info = {}  # return information
+        data = data_normalize(data)
+        for mt in self.config.keys():
+            if mt == "pose":
+                x = numpy.array(
+                    [numpy.array([data[frame]['pose'][point]['y'] for frame in range(len(data))]) for point in
+                     self.config[mt]])
+                for i, point in enumerate(self.config[mt]):
+                    peaks, peak_height = find_peaks(x[i], height=x[i].mean(), distance=10, prominence=0.3)
+                    widths, heights, left_ips, right_ips = peak_widths(x[i], peaks)
+                    temp = []
+                    for p in range(len(peaks)):
+                        t = PoseDataStruct()
+                        t.peak_max_pos = peaks[p]
+                        t.peak_max = peak_height['peak_heights'][p]
+
+                        t.peak_width = widths[p]
+                        t.start = t.end = heights[p]
+                        t.start_pos = left_ips[p]
+                        t.end_pos = right_ips[p]
+
+                        temp.append(t)
+
+                    info[point] = {mt : temp}
+            if mt == "hand":
+                    temp = []
+                    # for frame in range(len(data)):
+                    #     for hand_type in data[frame][mt].keys():
+                    #         if data[frame]
+
+
+            # if mt == "face":
+            #     data = face_normalize(data)
+
+        """輸出測試"""
+        # for point in info.keys():
+        #     print(f"point {point}")
+        #     for i, st in enumerate(info[point]):
+        #         print(f"peak {i}")
+        #         print(f"peak_max {st.peak_max}")
+        #         print(f"peak_max_pos {st.peak_max_pos}")
+        #         print(f"peak_width {st.peak_width}\n")
+        #         print(f"start {st.start}")
+        #         print(f"start_pos {st.start_pos}\n")
+        #         print(f"end {st.end}")
+        #         print(f"end_pos {st.end_pos}\n")
+
+        return info
+
+    def count_score(self, raw_data):
+        data = []
+        peak_width = []  # 波的寬度
+        two_peak_maximum_pos_gap = []  # 兩波峰的距離
+        two_peak_distance = []  # 前一個波的結束到下一個波的開始的距離
+        st_to_max_to_end_diff = []  # 下去 -> 上來的時間差距
+        num_of_peak = 6
+        score = 0
+        for point in self.config['pose']:
+            for i in range(len(raw_data[point])):
+                data.append(raw_data[point][i])
+        data.sort(key=lambda x: x.peak_max_pos)  # sort by peak maximum position
+        for i in range(len(data)):
+            peak_width.append(data[i].end_pos - data[i].start_pos)
+            st_to_max_to_end_diff.append(
+                abs((data[i].peak_max_pos - data[i].start_pos) - (data[i].end_pos - data[i].peak_max_pos)))
+            if i != 0:
+                two_peak_maximum_pos_gap.append(data[i].peak_max_pos - data[i - 1].peak_max_pos)
+                two_peak_distance.append(data[i].start_pos - data[i - 1].end_pos)
+        """輸出測試"""
+        # print(f"peak_width {peak_width}")
+        # print(f"two_peak_maximum_pos_gap {two_peak_maximum_pos_gap}")
+        # print(f"two_peak_distance {two_peak_distance}")
+        # print(f"st_to_max_to_end_diff {st_to_max_to_end_diff}")
+
+        # score judgement
+        # 第一個判斷 拍六下 每下10分 共60分
+        temp_score = 60
+        if len(data) == 12:
+            score += temp_score
+        else:
+            temp_score -= abs(6 - len(data)) * 5
+            score += max(temp_score, 0)
+        self.score[0] = max(temp_score, 0)
+        # 第二個判斷 每拍一下(上去+下來)的時間長度(差距越小越好) 共13分
+        peak_width = numpy.array(peak_width)
+        peak_width_mean = peak_width.mean()
+        temp_sc = 13
+        for i in range(len(peak_width)):
+            if abs(peak_width[i] - peak_width_mean) > 2:
+                temp_sc -= 2
+            elif abs(peak_width[i] - peak_width_mean) > 1:
+                temp_sc -= 1
+        if temp_sc < 0:
+            temp_sc = 0
+        self.score[1] = temp_sc
+        score += temp_sc
+        # 第三個判斷 拍一下間隔的時間(差距盡量要相同 越連續) 共13分
+        two_peak_maximum_pos_gap = numpy.array(two_peak_maximum_pos_gap)
+        two_peak_maximum_pos_gap_mean = two_peak_maximum_pos_gap.mean()
+        temp_sc = 13
+        for i in range(len(two_peak_maximum_pos_gap)):
+            if abs(two_peak_maximum_pos_gap[i] - two_peak_maximum_pos_gap_mean) > 3:
+                temp_sc -= 2
+            elif abs(two_peak_maximum_pos_gap[i] - two_peak_maximum_pos_gap_mean) > 2:
+                temp_sc -= 1
+        if temp_sc < 0:
+            temp_sc = 0
+        self.score[2] = temp_sc
+        score += temp_sc
+        # 第四個判斷 拍一下的流暢度(拍下去 與回到初始位置的時間) 共13分
+        st_to_max_to_end_diff = numpy.array(st_to_max_to_end_diff)
+        temp_sc = 13
+        for i in range(len(st_to_max_to_end_diff)):
+            if abs(st_to_max_to_end_diff[i]) > 6:
+                temp_sc -= 2
+            elif abs(st_to_max_to_end_diff[i]) > 5:
+                temp_sc -= 1
+        if temp_sc < 0:
+            temp_sc = 0
+        self.score[3] = temp_sc
+        score += temp_sc
+        print(f"score: {score}")
+        if score >= 80:
+            print(f"很棒")
+        elif score >= 70:
+            print(f"普通")
+        else:
+            print(f"很差")
+
+    def main_func(self):
+        mdp = MDP()
+        row_data = mdp.get_data(self.video_path, list(self.config.keys()))
+        data = self.find_peak(row_data)
+        self.count_score(data)
+
+class Action10:
+    def __init__(self, path):
+        self.config = {'pose': [23, 24, 25, 26, 27, 28]}
+        self.video_path = path
+        self.score = [0 for _ in range(4)]
+
+    def find_peak(self, data, forward_find=0, mean_offset=0.01):
+        info = {}  # return information
+        data = data_normalize(data)
+        for mt in self.config.keys():
+            if mt == "pose":
+                x = numpy.array(
+                    [numpy.array([data[frame]['pose'][point]['y'] for frame in range(len(data))]) for point in
+                     self.config[mt]])
+                for i, point in enumerate(self.config[mt]):
+                    peaks, peak_height = find_peaks(x[i], height=x[i].mean(), distance=10, prominence=0.3)
+                    widths, heights, left_ips, right_ips = peak_widths(x[i], peaks)
+                    temp = []
+                    for p in range(len(peaks)):
+                        t = PoseDataStruct()
+                        t.peak_max_pos = peaks[p]
+                        t.peak_max = peak_height['peak_heights'][p]
+
+                        t.peak_width = widths[p]
+                        t.start = t.end = heights[p]
+                        t.start_pos = left_ips[p]
+                        t.end_pos = right_ips[p]
+
+                        temp.append(t)
+
+                    info[point] = {mt : temp}
+            if mt == "hand":
+                    temp = []
+                    # for frame in range(len(data)):
+                    #     for hand_type in data[frame][mt].keys():
+                    #         if data[frame]
+
+
+            # if mt == "face":
+            #     data = face_normalize(data)
+
+        """輸出測試"""
+        # for point in info.keys():
+        #     print(f"point {point}")
+        #     for i, st in enumerate(info[point]):
+        #         print(f"peak {i}")
+        #         print(f"peak_max {st.peak_max}")
+        #         print(f"peak_max_pos {st.peak_max_pos}")
+        #         print(f"peak_width {st.peak_width}\n")
+        #         print(f"start {st.start}")
+        #         print(f"start_pos {st.start_pos}\n")
+        #         print(f"end {st.end}")
+        #         print(f"end_pos {st.end_pos}\n")
+
+        return info
+
+    def count_score(self, raw_data):
+        data = []
+        peak_width = []  # 波的寬度
+        two_peak_maximum_pos_gap = []  # 兩波峰的距離
+        two_peak_distance = []  # 前一個波的結束到下一個波的開始的距離
+        st_to_max_to_end_diff = []  # 下去 -> 上來的時間差距
+        num_of_peak = 6
+        score = 0
+        for point in self.config['pose']:
+            for i in range(len(raw_data[point])):
+                data.append(raw_data[point][i])
+        data.sort(key=lambda x: x.peak_max_pos)  # sort by peak maximum position
+        for i in range(len(data)):
+            peak_width.append(data[i].end_pos - data[i].start_pos)
+            st_to_max_to_end_diff.append(
+                abs((data[i].peak_max_pos - data[i].start_pos) - (data[i].end_pos - data[i].peak_max_pos)))
+            if i != 0:
+                two_peak_maximum_pos_gap.append(data[i].peak_max_pos - data[i - 1].peak_max_pos)
+                two_peak_distance.append(data[i].start_pos - data[i - 1].end_pos)
+        """輸出測試"""
+        # print(f"peak_width {peak_width}")
+        # print(f"two_peak_maximum_pos_gap {two_peak_maximum_pos_gap}")
+        # print(f"two_peak_distance {two_peak_distance}")
+        # print(f"st_to_max_to_end_diff {st_to_max_to_end_diff}")
+
+        # score judgement
+        # 第一個判斷 拍六下 每下10分 共60分
+        temp_score = 60
+        if len(data) == 12:
+            score += temp_score
+        else:
+            temp_score -= abs(6 - len(data)) * 5
+            score += max(temp_score, 0)
+        self.score[0] = max(temp_score, 0)
+        # 第二個判斷 每拍一下(上去+下來)的時間長度(差距越小越好) 共13分
+        peak_width = numpy.array(peak_width)
+        peak_width_mean = peak_width.mean()
+        temp_sc = 13
+        for i in range(len(peak_width)):
+            if abs(peak_width[i] - peak_width_mean) > 2:
+                temp_sc -= 2
+            elif abs(peak_width[i] - peak_width_mean) > 1:
+                temp_sc -= 1
+        if temp_sc < 0:
+            temp_sc = 0
+        self.score[1] = temp_sc
+        score += temp_sc
+        # 第三個判斷 拍一下間隔的時間(差距盡量要相同 越連續) 共13分
+        two_peak_maximum_pos_gap = numpy.array(two_peak_maximum_pos_gap)
+        two_peak_maximum_pos_gap_mean = two_peak_maximum_pos_gap.mean()
+        temp_sc = 13
+        for i in range(len(two_peak_maximum_pos_gap)):
+            if abs(two_peak_maximum_pos_gap[i] - two_peak_maximum_pos_gap_mean) > 3:
+                temp_sc -= 2
+            elif abs(two_peak_maximum_pos_gap[i] - two_peak_maximum_pos_gap_mean) > 2:
+                temp_sc -= 1
+        if temp_sc < 0:
+            temp_sc = 0
+        self.score[2] = temp_sc
+        score += temp_sc
+        # 第四個判斷 拍一下的流暢度(拍下去 與回到初始位置的時間) 共13分
+        st_to_max_to_end_diff = numpy.array(st_to_max_to_end_diff)
+        temp_sc = 13
+        for i in range(len(st_to_max_to_end_diff)):
+            if abs(st_to_max_to_end_diff[i]) > 6:
+                temp_sc -= 2
+            elif abs(st_to_max_to_end_diff[i]) > 5:
+                temp_sc -= 1
+        if temp_sc < 0:
+            temp_sc = 0
+        self.score[3] = temp_sc
+        score += temp_sc
+        print(f"score: {score}")
+        if score >= 80:
+            print(f"很棒")
+        elif score >= 70:
+            print(f"普通")
+        else:
+            print(f"很差")
+
+    def main_func(self):
+        mdp = MDP()
+        row_data = mdp.get_data(self.video_path, list(self.config.keys()))
+        data = self.find_peak(row_data)
+        self.count_score(data)
+
+class Action11:
+    def __init__(self, path):
+        self.config = {'pose': [23, 24, 25, 26, 27, 28]}
+        self.video_path = path
+        self.score = [0 for _ in range(4)]
+
+    def find_peak(self, data, forward_find=0, mean_offset=0.01):
+        info = {}  # return information
+        data = data_normalize(data)
+        for mt in self.config.keys():
+            if mt == "pose":
+                x = numpy.array(
+                    [numpy.array([data[frame]['pose'][point]['y'] for frame in range(len(data))]) for point in
+                     self.config[mt]])
+                for i, point in enumerate(self.config[mt]):
+                    peaks, peak_height = find_peaks(x[i], height=x[i].mean(), distance=10, prominence=0.3)
+                    widths, heights, left_ips, right_ips = peak_widths(x[i], peaks)
+                    temp = []
+                    for p in range(len(peaks)):
+                        t = PoseDataStruct()
+                        t.peak_max_pos = peaks[p]
+                        t.peak_max = peak_height['peak_heights'][p]
+
+                        t.peak_width = widths[p]
+                        t.start = t.end = heights[p]
+                        t.start_pos = left_ips[p]
+                        t.end_pos = right_ips[p]
+
+                        temp.append(t)
+
+                    info[point] = {mt : temp}
+            if mt == "hand":
+                    temp = []
+                    # for frame in range(len(data)):
+                    #     for hand_type in data[frame][mt].keys():
+                    #         if data[frame]
+
+
+            # if mt == "face":
+            #     data = face_normalize(data)
+
+        """輸出測試"""
+        # for point in info.keys():
+        #     print(f"point {point}")
+        #     for i, st in enumerate(info[point]):
+        #         print(f"peak {i}")
+        #         print(f"peak_max {st.peak_max}")
+        #         print(f"peak_max_pos {st.peak_max_pos}")
+        #         print(f"peak_width {st.peak_width}\n")
+        #         print(f"start {st.start}")
+        #         print(f"start_pos {st.start_pos}\n")
+        #         print(f"end {st.end}")
+        #         print(f"end_pos {st.end_pos}\n")
+
+        return info
+
+    def count_score(self, raw_data):
+        data = []
+        peak_width = []  # 波的寬度
+        two_peak_maximum_pos_gap = []  # 兩波峰的距離
+        two_peak_distance = []  # 前一個波的結束到下一個波的開始的距離
+        st_to_max_to_end_diff = []  # 下去 -> 上來的時間差距
+        num_of_peak = 6
+        score = 0
+        for point in self.config['pose']:
+            for i in range(len(raw_data[point])):
+                data.append(raw_data[point][i])
+        data.sort(key=lambda x: x.peak_max_pos)  # sort by peak maximum position
+        for i in range(len(data)):
+            peak_width.append(data[i].end_pos - data[i].start_pos)
+            st_to_max_to_end_diff.append(
+                abs((data[i].peak_max_pos - data[i].start_pos) - (data[i].end_pos - data[i].peak_max_pos)))
+            if i != 0:
+                two_peak_maximum_pos_gap.append(data[i].peak_max_pos - data[i - 1].peak_max_pos)
+                two_peak_distance.append(data[i].start_pos - data[i - 1].end_pos)
+        """輸出測試"""
+        # print(f"peak_width {peak_width}")
+        # print(f"two_peak_maximum_pos_gap {two_peak_maximum_pos_gap}")
+        # print(f"two_peak_distance {two_peak_distance}")
+        # print(f"st_to_max_to_end_diff {st_to_max_to_end_diff}")
+
+        # score judgement
+        # 第一個判斷 拍六下 每下10分 共60分
+        temp_score = 60
+        if len(data) == 12:
+            score += temp_score
+        else:
+            temp_score -= abs(6 - len(data)) * 5
+            score += max(temp_score, 0)
+        self.score[0] = max(temp_score, 0)
+        # 第二個判斷 每拍一下(上去+下來)的時間長度(差距越小越好) 共13分
+        peak_width = numpy.array(peak_width)
+        peak_width_mean = peak_width.mean()
+        temp_sc = 13
+        for i in range(len(peak_width)):
+            if abs(peak_width[i] - peak_width_mean) > 2:
+                temp_sc -= 2
+            elif abs(peak_width[i] - peak_width_mean) > 1:
+                temp_sc -= 1
+        if temp_sc < 0:
+            temp_sc = 0
+        self.score[1] = temp_sc
+        score += temp_sc
+        # 第三個判斷 拍一下間隔的時間(差距盡量要相同 越連續) 共13分
+        two_peak_maximum_pos_gap = numpy.array(two_peak_maximum_pos_gap)
+        two_peak_maximum_pos_gap_mean = two_peak_maximum_pos_gap.mean()
+        temp_sc = 13
+        for i in range(len(two_peak_maximum_pos_gap)):
+            if abs(two_peak_maximum_pos_gap[i] - two_peak_maximum_pos_gap_mean) > 3:
+                temp_sc -= 2
+            elif abs(two_peak_maximum_pos_gap[i] - two_peak_maximum_pos_gap_mean) > 2:
+                temp_sc -= 1
+        if temp_sc < 0:
+            temp_sc = 0
+        self.score[2] = temp_sc
+        score += temp_sc
+        # 第四個判斷 拍一下的流暢度(拍下去 與回到初始位置的時間) 共13分
+        st_to_max_to_end_diff = numpy.array(st_to_max_to_end_diff)
+        temp_sc = 13
+        for i in range(len(st_to_max_to_end_diff)):
+            if abs(st_to_max_to_end_diff[i]) > 6:
+                temp_sc -= 2
+            elif abs(st_to_max_to_end_diff[i]) > 5:
+                temp_sc -= 1
+        if temp_sc < 0:
+            temp_sc = 0
+        self.score[3] = temp_sc
+        score += temp_sc
+        print(f"score: {score}")
+        if score >= 80:
+            print(f"很棒")
+        elif score >= 70:
+            print(f"普通")
+        else:
+            print(f"很差")
+
+    def main_func(self):
+        mdp = MDP()
+        row_data = mdp.get_data(self.video_path, list(self.config.keys()))
+        data = self.find_peak(row_data)
+        self.count_score(data)
+
+class Action12:
+    def __init__(self, path):
+        self.config = {'pose': [11, 12, 13, 14, 15, 16, 23, 24, 25, 26, 27, 28]}
+        self.video_path = path
+        self.score = [0 for _ in range(4)]
+
+    def find_peak(self, data, forward_find=0, mean_offset=0.01):
+        info = {}  # return information
+        data = data_normalize(data)
+        for mt in self.config.keys():
+            if mt == "pose":
+                x = numpy.array(
+                    [numpy.array([data[frame]['pose'][point]['y'] for frame in range(len(data))]) for point in
+                     self.config[mt]])
+                for i, point in enumerate(self.config[mt]):
+                    peaks, peak_height = find_peaks(x[i], height=x[i].mean(), distance=10, prominence=0.3)
+                    widths, heights, left_ips, right_ips = peak_widths(x[i], peaks)
+                    temp = []
+                    for p in range(len(peaks)):
+                        t = PoseDataStruct()
+                        t.peak_max_pos = peaks[p]
+                        t.peak_max = peak_height['peak_heights'][p]
+
+                        t.peak_width = widths[p]
+                        t.start = t.end = heights[p]
+                        t.start_pos = left_ips[p]
+                        t.end_pos = right_ips[p]
+
+                        temp.append(t)
+
+                    info[point] = {mt : temp}
+            if mt == "hand":
+                    temp = []
+                    # for frame in range(len(data)):
+                    #     for hand_type in data[frame][mt].keys():
+                    #         if data[frame]
+
+
+            # if mt == "face":
+            #     data = face_normalize(data)
+
+        """輸出測試"""
+        # for point in info.keys():
+        #     print(f"point {point}")
+        #     for i, st in enumerate(info[point]):
+        #         print(f"peak {i}")
+        #         print(f"peak_max {st.peak_max}")
+        #         print(f"peak_max_pos {st.peak_max_pos}")
+        #         print(f"peak_width {st.peak_width}\n")
+        #         print(f"start {st.start}")
+        #         print(f"start_pos {st.start_pos}\n")
+        #         print(f"end {st.end}")
+        #         print(f"end_pos {st.end_pos}\n")
+
+        return info
+
+    def count_score(self, raw_data):
+        data = []
+        peak_width = []  # 波的寬度
+        two_peak_maximum_pos_gap = []  # 兩波峰的距離
+        two_peak_distance = []  # 前一個波的結束到下一個波的開始的距離
+        st_to_max_to_end_diff = []  # 下去 -> 上來的時間差距
+        num_of_peak = 6
+        score = 0
+        for point in self.config['pose']:
+            for i in range(len(raw_data[point])):
+                data.append(raw_data[point][i])
+        data.sort(key=lambda x: x.peak_max_pos)  # sort by peak maximum position
+        for i in range(len(data)):
+            peak_width.append(data[i].end_pos - data[i].start_pos)
+            st_to_max_to_end_diff.append(
+                abs((data[i].peak_max_pos - data[i].start_pos) - (data[i].end_pos - data[i].peak_max_pos)))
+            if i != 0:
+                two_peak_maximum_pos_gap.append(data[i].peak_max_pos - data[i - 1].peak_max_pos)
+                two_peak_distance.append(data[i].start_pos - data[i - 1].end_pos)
+        """輸出測試"""
+        # print(f"peak_width {peak_width}")
+        # print(f"two_peak_maximum_pos_gap {two_peak_maximum_pos_gap}")
+        # print(f"two_peak_distance {two_peak_distance}")
+        # print(f"st_to_max_to_end_diff {st_to_max_to_end_diff}")
+
+        # score judgement
+        # 第一個判斷 拍六下 每下10分 共60分
+        temp_score = 60
+        if len(data) == 12:
+            score += temp_score
+        else:
+            temp_score -= abs(6 - len(data)) * 5
+            score += max(temp_score, 0)
+        self.score[0] = max(temp_score, 0)
+        # 第二個判斷 每拍一下(上去+下來)的時間長度(差距越小越好) 共13分
+        peak_width = numpy.array(peak_width)
+        peak_width_mean = peak_width.mean()
+        temp_sc = 13
+        for i in range(len(peak_width)):
+            if abs(peak_width[i] - peak_width_mean) > 2:
+                temp_sc -= 2
+            elif abs(peak_width[i] - peak_width_mean) > 1:
+                temp_sc -= 1
+        if temp_sc < 0:
+            temp_sc = 0
+        self.score[1] = temp_sc
+        score += temp_sc
+        # 第三個判斷 拍一下間隔的時間(差距盡量要相同 越連續) 共13分
+        two_peak_maximum_pos_gap = numpy.array(two_peak_maximum_pos_gap)
+        two_peak_maximum_pos_gap_mean = two_peak_maximum_pos_gap.mean()
+        temp_sc = 13
+        for i in range(len(two_peak_maximum_pos_gap)):
+            if abs(two_peak_maximum_pos_gap[i] - two_peak_maximum_pos_gap_mean) > 3:
+                temp_sc -= 2
+            elif abs(two_peak_maximum_pos_gap[i] - two_peak_maximum_pos_gap_mean) > 2:
+                temp_sc -= 1
+        if temp_sc < 0:
+            temp_sc = 0
+        self.score[2] = temp_sc
+        score += temp_sc
+        # 第四個判斷 拍一下的流暢度(拍下去 與回到初始位置的時間) 共13分
+        st_to_max_to_end_diff = numpy.array(st_to_max_to_end_diff)
+        temp_sc = 13
+        for i in range(len(st_to_max_to_end_diff)):
+            if abs(st_to_max_to_end_diff[i]) > 6:
+                temp_sc -= 2
+            elif abs(st_to_max_to_end_diff[i]) > 5:
+                temp_sc -= 1
+        if temp_sc < 0:
+            temp_sc = 0
+        self.score[3] = temp_sc
+        score += temp_sc
+        print(f"score: {score}")
+        if score >= 80:
+            print(f"很棒")
+        elif score >= 70:
+            print(f"普通")
+        else:
+            print(f"很差")
+
+    def main_func(self):
+        mdp = MDP()
+        row_data = mdp.get_data(self.video_path, list(self.config.keys()))
+        data = self.find_peak(row_data)
+        self.count_score(data)
+
+class Action13:
+    def __init__(self, path):
+        self.config = {'pose': [11, 12, 13, 14, 15, 16]}
+        self.video_path = path
+        self.score = [0 for _ in range(4)]
+
+    def find_peak(self, data, forward_find=0, mean_offset=0.01):
+        info = {}  # return information
+        data = data_normalize(data)
+        for mt in self.config.keys():
+            if mt == "pose":
+                x = numpy.array(
+                    [numpy.array([data[frame]['pose'][point]['y'] for frame in range(len(data))]) for point in
+                     self.config[mt]])
+                for i, point in enumerate(self.config[mt]):
+                    peaks, peak_height = find_peaks(x[i], height=x[i].mean(), distance=10, prominence=0.3)
+                    widths, heights, left_ips, right_ips = peak_widths(x[i], peaks)
+                    temp = []
+                    for p in range(len(peaks)):
+                        t = PoseDataStruct()
+                        t.peak_max_pos = peaks[p]
+                        t.peak_max = peak_height['peak_heights'][p]
+
+                        t.peak_width = widths[p]
+                        t.start = t.end = heights[p]
+                        t.start_pos = left_ips[p]
+                        t.end_pos = right_ips[p]
+
+                        temp.append(t)
+
+                    info[point] = {mt : temp}
+            if mt == "hand":
+                    temp = []
+                    # for frame in range(len(data)):
+                    #     for hand_type in data[frame][mt].keys():
+                    #         if data[frame]
+
+
+            # if mt == "face":
+            #     data = face_normalize(data)
+
+        """輸出測試"""
+        # for point in info.keys():
+        #     print(f"point {point}")
+        #     for i, st in enumerate(info[point]):
+        #         print(f"peak {i}")
+        #         print(f"peak_max {st.peak_max}")
+        #         print(f"peak_max_pos {st.peak_max_pos}")
+        #         print(f"peak_width {st.peak_width}\n")
+        #         print(f"start {st.start}")
+        #         print(f"start_pos {st.start_pos}\n")
+        #         print(f"end {st.end}")
+        #         print(f"end_pos {st.end_pos}\n")
+
+        return info
+
+    def count_score(self, raw_data):
+        data = []
+        peak_width = []  # 波的寬度
+        two_peak_maximum_pos_gap = []  # 兩波峰的距離
+        two_peak_distance = []  # 前一個波的結束到下一個波的開始的距離
+        st_to_max_to_end_diff = []  # 下去 -> 上來的時間差距
+        num_of_peak = 6
+        score = 0
+        for point in self.config['pose']:
+            for i in range(len(raw_data[point])):
+                data.append(raw_data[point][i])
+        data.sort(key=lambda x: x.peak_max_pos)  # sort by peak maximum position
+        for i in range(len(data)):
+            peak_width.append(data[i].end_pos - data[i].start_pos)
+            st_to_max_to_end_diff.append(
+                abs((data[i].peak_max_pos - data[i].start_pos) - (data[i].end_pos - data[i].peak_max_pos)))
+            if i != 0:
+                two_peak_maximum_pos_gap.append(data[i].peak_max_pos - data[i - 1].peak_max_pos)
+                two_peak_distance.append(data[i].start_pos - data[i - 1].end_pos)
+        """輸出測試"""
+        # print(f"peak_width {peak_width}")
+        # print(f"two_peak_maximum_pos_gap {two_peak_maximum_pos_gap}")
+        # print(f"two_peak_distance {two_peak_distance}")
+        # print(f"st_to_max_to_end_diff {st_to_max_to_end_diff}")
+
+        # score judgement
+        # 第一個判斷 拍六下 每下10分 共60分
+        temp_score = 60
+        if len(data) == 12:
+            score += temp_score
+        else:
+            temp_score -= abs(6 - len(data)) * 5
+            score += max(temp_score, 0)
+        self.score[0] = max(temp_score, 0)
+        # 第二個判斷 每拍一下(上去+下來)的時間長度(差距越小越好) 共13分
+        peak_width = numpy.array(peak_width)
+        peak_width_mean = peak_width.mean()
+        temp_sc = 13
+        for i in range(len(peak_width)):
+            if abs(peak_width[i] - peak_width_mean) > 2:
+                temp_sc -= 2
+            elif abs(peak_width[i] - peak_width_mean) > 1:
+                temp_sc -= 1
+        if temp_sc < 0:
+            temp_sc = 0
+        self.score[1] = temp_sc
+        score += temp_sc
+        # 第三個判斷 拍一下間隔的時間(差距盡量要相同 越連續) 共13分
+        two_peak_maximum_pos_gap = numpy.array(two_peak_maximum_pos_gap)
+        two_peak_maximum_pos_gap_mean = two_peak_maximum_pos_gap.mean()
+        temp_sc = 13
+        for i in range(len(two_peak_maximum_pos_gap)):
+            if abs(two_peak_maximum_pos_gap[i] - two_peak_maximum_pos_gap_mean) > 3:
+                temp_sc -= 2
+            elif abs(two_peak_maximum_pos_gap[i] - two_peak_maximum_pos_gap_mean) > 2:
+                temp_sc -= 1
+        if temp_sc < 0:
+            temp_sc = 0
+        self.score[2] = temp_sc
+        score += temp_sc
+        # 第四個判斷 拍一下的流暢度(拍下去 與回到初始位置的時間) 共13分
+        st_to_max_to_end_diff = numpy.array(st_to_max_to_end_diff)
+        temp_sc = 13
+        for i in range(len(st_to_max_to_end_diff)):
+            if abs(st_to_max_to_end_diff[i]) > 6:
+                temp_sc -= 2
+            elif abs(st_to_max_to_end_diff[i]) > 5:
+                temp_sc -= 1
+        if temp_sc < 0:
+            temp_sc = 0
+        self.score[3] = temp_sc
+        score += temp_sc
+        print(f"score: {score}")
+        if score >= 80:
+            print(f"很棒")
+        elif score >= 70:
+            print(f"普通")
+        else:
+            print(f"很差")
+
+    def main_func(self):
+        mdp = MDP()
+        row_data = mdp.get_data(self.video_path, list(self.config.keys()))
+        data = self.find_peak(row_data)
+        self.count_score(data)
+
+class Action14:
+    def __init__(self, path):
+        self.config = {'pose': [23, 24, 25, 26, 27, 28]}
+        self.video_path = path
+        self.score = [0 for _ in range(4)]
+
+    def find_peak(self, data, forward_find=0, mean_offset=0.01):
+        info = {}  # return information
+        data = data_normalize(data)
+        for mt in self.config.keys():
+            if mt == "pose":
+                x = numpy.array(
+                    [numpy.array([data[frame]['pose'][point]['y'] for frame in range(len(data))]) for point in
+                     self.config[mt]])
+                for i, point in enumerate(self.config[mt]):
+                    peaks, peak_height = find_peaks(x[i], height=x[i].mean(), distance=10, prominence=0.3)
+                    widths, heights, left_ips, right_ips = peak_widths(x[i], peaks)
+                    temp = []
+                    for p in range(len(peaks)):
+                        t = PoseDataStruct()
+                        t.peak_max_pos = peaks[p]
+                        t.peak_max = peak_height['peak_heights'][p]
+
+                        t.peak_width = widths[p]
+                        t.start = t.end = heights[p]
+                        t.start_pos = left_ips[p]
+                        t.end_pos = right_ips[p]
+
+                        temp.append(t)
+
+                    info[point] = {mt : temp}
+            if mt == "hand":
+                    temp = []
+                    # for frame in range(len(data)):
+                    #     for hand_type in data[frame][mt].keys():
+                    #         if data[frame]
+
+
+            # if mt == "face":
+            #     data = face_normalize(data)
+
+        """輸出測試"""
+        # for point in info.keys():
+        #     print(f"point {point}")
+        #     for i, st in enumerate(info[point]):
+        #         print(f"peak {i}")
+        #         print(f"peak_max {st.peak_max}")
+        #         print(f"peak_max_pos {st.peak_max_pos}")
+        #         print(f"peak_width {st.peak_width}\n")
+        #         print(f"start {st.start}")
+        #         print(f"start_pos {st.start_pos}\n")
+        #         print(f"end {st.end}")
+        #         print(f"end_pos {st.end_pos}\n")
+
+        return info
+
+    def count_score(self, raw_data):
+        data = []
+        peak_width = []  # 波的寬度
+        two_peak_maximum_pos_gap = []  # 兩波峰的距離
+        two_peak_distance = []  # 前一個波的結束到下一個波的開始的距離
+        st_to_max_to_end_diff = []  # 下去 -> 上來的時間差距
+        num_of_peak = 6
+        score = 0
+        for point in self.config['pose']:
+            for i in range(len(raw_data[point])):
+                data.append(raw_data[point][i])
+        data.sort(key=lambda x: x.peak_max_pos)  # sort by peak maximum position
+        for i in range(len(data)):
+            peak_width.append(data[i].end_pos - data[i].start_pos)
+            st_to_max_to_end_diff.append(
+                abs((data[i].peak_max_pos - data[i].start_pos) - (data[i].end_pos - data[i].peak_max_pos)))
+            if i != 0:
+                two_peak_maximum_pos_gap.append(data[i].peak_max_pos - data[i - 1].peak_max_pos)
+                two_peak_distance.append(data[i].start_pos - data[i - 1].end_pos)
+        """輸出測試"""
+        # print(f"peak_width {peak_width}")
+        # print(f"two_peak_maximum_pos_gap {two_peak_maximum_pos_gap}")
+        # print(f"two_peak_distance {two_peak_distance}")
+        # print(f"st_to_max_to_end_diff {st_to_max_to_end_diff}")
+
+        # score judgement
+        # 第一個判斷 拍六下 每下10分 共60分
+        temp_score = 60
+        if len(data) == 12:
+            score += temp_score
+        else:
+            temp_score -= abs(6 - len(data)) * 5
+            score += max(temp_score, 0)
+        self.score[0] = max(temp_score, 0)
+        # 第二個判斷 每拍一下(上去+下來)的時間長度(差距越小越好) 共13分
+        peak_width = numpy.array(peak_width)
+        peak_width_mean = peak_width.mean()
+        temp_sc = 13
+        for i in range(len(peak_width)):
+            if abs(peak_width[i] - peak_width_mean) > 2:
+                temp_sc -= 2
+            elif abs(peak_width[i] - peak_width_mean) > 1:
+                temp_sc -= 1
+        if temp_sc < 0:
+            temp_sc = 0
+        self.score[1] = temp_sc
+        score += temp_sc
+        # 第三個判斷 拍一下間隔的時間(差距盡量要相同 越連續) 共13分
+        two_peak_maximum_pos_gap = numpy.array(two_peak_maximum_pos_gap)
+        two_peak_maximum_pos_gap_mean = two_peak_maximum_pos_gap.mean()
+        temp_sc = 13
+        for i in range(len(two_peak_maximum_pos_gap)):
+            if abs(two_peak_maximum_pos_gap[i] - two_peak_maximum_pos_gap_mean) > 3:
+                temp_sc -= 2
+            elif abs(two_peak_maximum_pos_gap[i] - two_peak_maximum_pos_gap_mean) > 2:
+                temp_sc -= 1
+        if temp_sc < 0:
+            temp_sc = 0
+        self.score[2] = temp_sc
+        score += temp_sc
+        # 第四個判斷 拍一下的流暢度(拍下去 與回到初始位置的時間) 共13分
+        st_to_max_to_end_diff = numpy.array(st_to_max_to_end_diff)
+        temp_sc = 13
+        for i in range(len(st_to_max_to_end_diff)):
+            if abs(st_to_max_to_end_diff[i]) > 6:
+                temp_sc -= 2
+            elif abs(st_to_max_to_end_diff[i]) > 5:
+                temp_sc -= 1
+        if temp_sc < 0:
+            temp_sc = 0
+        self.score[3] = temp_sc
+        score += temp_sc
+        print(f"score: {score}")
+        if score >= 80:
+            print(f"很棒")
+        elif score >= 70:
+            print(f"普通")
+        else:
+            print(f"很差")
+
+    def main_func(self):
+        mdp = MDP()
+        row_data = mdp.get_data(self.video_path, list(self.config.keys()))
+        data = self.find_peak(row_data)
+        self.count_score(data)
+
+class Action15:
+    def __init__(self, path):
+        self.config = {'pose': [23, 24, 25, 26, 27, 28]}
+        self.video_path = path
+        self.score = [0 for _ in range(4)]
+
+    def find_peak(self, data, forward_find=0, mean_offset=0.01):
+        info = {}  # return information
+        data = data_normalize(data)
+        for mt in self.config.keys():
+            if mt == "pose":
+                x = numpy.array(
+                    [numpy.array([data[frame]['pose'][point]['y'] for frame in range(len(data))]) for point in
+                     self.config[mt]])
+                for i, point in enumerate(self.config[mt]):
+                    peaks, peak_height = find_peaks(x[i], height=x[i].mean(), distance=10, prominence=0.3)
+                    widths, heights, left_ips, right_ips = peak_widths(x[i], peaks)
+                    temp = []
+                    for p in range(len(peaks)):
+                        t = PoseDataStruct()
+                        t.peak_max_pos = peaks[p]
+                        t.peak_max = peak_height['peak_heights'][p]
+
+                        t.peak_width = widths[p]
+                        t.start = t.end = heights[p]
+                        t.start_pos = left_ips[p]
+                        t.end_pos = right_ips[p]
+
+                        temp.append(t)
+
+                    info[point] = {mt : temp}
+            if mt == "hand":
+                    temp = []
+                    # for frame in range(len(data)):
+                    #     for hand_type in data[frame][mt].keys():
+                    #         if data[frame]
+
+
+            # if mt == "face":
+            #     data = face_normalize(data)
+
+        """輸出測試"""
+        # for point in info.keys():
+        #     print(f"point {point}")
+        #     for i, st in enumerate(info[point]):
+        #         print(f"peak {i}")
+        #         print(f"peak_max {st.peak_max}")
+        #         print(f"peak_max_pos {st.peak_max_pos}")
+        #         print(f"peak_width {st.peak_width}\n")
+        #         print(f"start {st.start}")
+        #         print(f"start_pos {st.start_pos}\n")
+        #         print(f"end {st.end}")
+        #         print(f"end_pos {st.end_pos}\n")
+
+        return info
+
+    def count_score(self, raw_data):
+        data = []
+        peak_width = []  # 波的寬度
+        two_peak_maximum_pos_gap = []  # 兩波峰的距離
+        two_peak_distance = []  # 前一個波的結束到下一個波的開始的距離
+        st_to_max_to_end_diff = []  # 下去 -> 上來的時間差距
+        num_of_peak = 6
+        score = 0
+        for point in self.config['pose']:
+            for i in range(len(raw_data[point])):
+                data.append(raw_data[point][i])
+        data.sort(key=lambda x: x.peak_max_pos)  # sort by peak maximum position
+        for i in range(len(data)):
+            peak_width.append(data[i].end_pos - data[i].start_pos)
+            st_to_max_to_end_diff.append(
+                abs((data[i].peak_max_pos - data[i].start_pos) - (data[i].end_pos - data[i].peak_max_pos)))
+            if i != 0:
+                two_peak_maximum_pos_gap.append(data[i].peak_max_pos - data[i - 1].peak_max_pos)
+                two_peak_distance.append(data[i].start_pos - data[i - 1].end_pos)
+        """輸出測試"""
+        # print(f"peak_width {peak_width}")
+        # print(f"two_peak_maximum_pos_gap {two_peak_maximum_pos_gap}")
+        # print(f"two_peak_distance {two_peak_distance}")
+        # print(f"st_to_max_to_end_diff {st_to_max_to_end_diff}")
+
+        # score judgement
+        # 第一個判斷 拍六下 每下10分 共60分
+        temp_score = 60
+        if len(data) == 12:
+            score += temp_score
+        else:
+            temp_score -= abs(6 - len(data)) * 5
+            score += max(temp_score, 0)
+        self.score[0] = max(temp_score, 0)
+        # 第二個判斷 每拍一下(上去+下來)的時間長度(差距越小越好) 共13分
+        peak_width = numpy.array(peak_width)
+        peak_width_mean = peak_width.mean()
+        temp_sc = 13
+        for i in range(len(peak_width)):
+            if abs(peak_width[i] - peak_width_mean) > 2:
+                temp_sc -= 2
+            elif abs(peak_width[i] - peak_width_mean) > 1:
+                temp_sc -= 1
+        if temp_sc < 0:
+            temp_sc = 0
+        self.score[1] = temp_sc
+        score += temp_sc
+        # 第三個判斷 拍一下間隔的時間(差距盡量要相同 越連續) 共13分
+        two_peak_maximum_pos_gap = numpy.array(two_peak_maximum_pos_gap)
+        two_peak_maximum_pos_gap_mean = two_peak_maximum_pos_gap.mean()
+        temp_sc = 13
+        for i in range(len(two_peak_maximum_pos_gap)):
+            if abs(two_peak_maximum_pos_gap[i] - two_peak_maximum_pos_gap_mean) > 3:
+                temp_sc -= 2
+            elif abs(two_peak_maximum_pos_gap[i] - two_peak_maximum_pos_gap_mean) > 2:
+                temp_sc -= 1
+        if temp_sc < 0:
+            temp_sc = 0
+        self.score[2] = temp_sc
+        score += temp_sc
+        # 第四個判斷 拍一下的流暢度(拍下去 與回到初始位置的時間) 共13分
+        st_to_max_to_end_diff = numpy.array(st_to_max_to_end_diff)
+        temp_sc = 13
+        for i in range(len(st_to_max_to_end_diff)):
+            if abs(st_to_max_to_end_diff[i]) > 6:
+                temp_sc -= 2
+            elif abs(st_to_max_to_end_diff[i]) > 5:
+                temp_sc -= 1
+        if temp_sc < 0:
+            temp_sc = 0
+        self.score[3] = temp_sc
+        score += temp_sc
+        print(f"score: {score}")
+        if score >= 80:
+            print(f"很棒")
+        elif score >= 70:
+            print(f"普通")
+        else:
+            print(f"很差")
+
+    def main_func(self):
+        mdp = MDP()
+        row_data = mdp.get_data(self.video_path, list(self.config.keys()))
+        data = self.find_peak(row_data)
+        self.count_score(data)
 
 #測試用
 if __name__ == "__main__":
