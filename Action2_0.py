@@ -10,8 +10,6 @@ from mediapipe.tasks.python.vision import FaceLandmarkerOptions
 import matplotlib.pyplot as plt
 from scipy.signal import find_peaks, peak_widths
 
-
-
 def data_normalize(data):
     # try:
     def dis(k1, k2):  # distance of two point
