@@ -6,8 +6,6 @@ import threading
 import subprocess
 import numpy as np
 import moviepy as mp
-import UI
-import pyrealsense2 as rs
 from pynput import keyboard
 from datetime import datetime
 import dearpygui.dearpygui as dpg
@@ -99,7 +97,9 @@ def init_parameter():
     video_path = "video_input"
     save_root_path = r"C:\Bilateral Coordination Record Video"
     if not os.path.exists(video_path):
-        print("Demo Video Path Not Found.")
+        print("****************************************")
+        print("ERROR: Demo Video Path Not Found.")
+        print("****************************************")
         return
     """Video Play Number"""
     video_play_number = 0  # Start from video 0
