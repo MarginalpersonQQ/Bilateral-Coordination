@@ -100,7 +100,6 @@ def init_parameter():
         print("****************************************")
         print("ERROR: Demo Video Path Not Found.")
         print("****************************************")
-        return
     """Video Play Number"""
     video_play_number = 0  # Start from video 0
     video_count = 16  # 0 ~ 20
@@ -462,9 +461,9 @@ def run_judge_program():
     global judge_program_running
     judge_program_running = True
     #原始方法
-    #subprce = subprocess.Popen(["python", "UI.py"])
+    subprce = subprocess.Popen(["python", "UI.py"])
     #打包需求
-    subprce = subprocess.Popen(["UI.exe"])
+    #subprce = subprocess.Popen(["UI.exe"])
     print("子 UI 啟動")
     subprce.wait()
     print("子 UI 已關閉")
@@ -490,7 +489,7 @@ def button_listener(sender, app_data = None, user_data = None):
         record_over = True
     if sender == "Judge Score":
         if not judge_program_running:
-            judge_program_status = threading.Thread(target=run_judge_program(), daemon=True)
+            judge_program_status = threading.Thread(target=run_judge_program, daemon=True)
             judge_program_status.start()
 
 def on_press(key):

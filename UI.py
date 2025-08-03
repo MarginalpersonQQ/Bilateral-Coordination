@@ -21,18 +21,15 @@ def update_grid(index, result=None, not_found=False):
     else:
         scores = result.score
         total = sum(scores)
-        values = [scores[0], scores[1], scores[2], scores[3], total if total != 99 else 100]
+        values = list(map(int, [scores[0], scores[1], scores[2], scores[3], total / 4]))
 
         for i, label in enumerate(video_slots[index]):
             label.config(text=str(values[i]))
 
 def run_all_actions(video_path):
     global video_fold_root_path
-    filenames = [
-        "01.MOV", "02.MOV", "03.MOV", "04.MOV", "05.mp4",
-        "06.mp4", "07.mp4", "08.mp4", "09.mp4", "10.mp4",
-        "11.mp4", "12.mp4", "13.mp4", "14.mp4", "15.mp4"
-    ]
+    file_exten = ".mp4"
+    filenames = [f"{i:02}{file_exten}" for i in range(1, 16)]
 
 
     def worker(index, filename):
@@ -44,7 +41,6 @@ def run_all_actions(video_path):
         # 動態取得類別名，例如 Action1、Action2...Action15
         action_class_name = f"Action{index + 1}"
         action_class = getattr(Action2_0, action_class_name, None)
-        print(action_class)
 
         if action_class is None:
             update_grid(index, not_found=True)
@@ -115,7 +111,7 @@ def judge_init():
     frame_index = 0
 
     # 標題名稱
-    headers = ["完整度", "穩定度", "連續性", "流暢度", "總分"]
+    headers = ["正確性", " 左右協調性", "時間流暢性", "空間流暢性", "總分"]
 
     main_frame = tk.Frame(root)
     main_frame.pack()

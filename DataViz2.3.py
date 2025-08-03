@@ -390,12 +390,24 @@ class MediaPipeUI:
 
         if part == "Hands":
             for label in ["Left", "Right"]:
-                if (label == "Left" and hands_selected[0]) or (label == "Right" and hands_selected[1]):
-                    for i in selected_ids:
-                        x = data[label][i]['x']
-                        y = data[label][i]['y']
+                with open(f"{label}_hand_landmark.txt", "w") as f: # hand landmarks interpolation test
+                    if (label == "Left" and hands_selected[0]) or (label == "Right" and hands_selected[1]):
+                        hand_ld_keeper = {}
+                        for i in selected_ids:
+                            x = data[label][i]['x']
+                            y = data[label][i]['y']
+                            xy_dict[f"{label} 手 - 點 {i}"] = (x, y)
+                            #region hand landmarks interpolation
+                            if i not in hand_ld_keeper:
+                                hand_ld_keeper[i] = {}
+                            hand_ld_keeper[i]['x'] = x
+                            hand_ld_keeper[i]['y'] = y
+                            # endregion
+                        #region Hand landmarks write into a file
+                        for (point, value) in hand_ld_keeper.items():
+                            print(f"point{point}:\n x:\n" + " ".join(map(str, value["x"])) + f"\n y:\n" + " ".join(map(str, value["y"])) + "\n")
+                            f.write(f"point{point}:\n x:\n" + " ".join(map(str, value["x"])) + f"\n y:\n" + " ".join(map(str, value["y"])) + "\n")
 
-                        xy_dict[f"{label} 手 - 點 {i}"] = (x, y)
         elif part == "Face":
             data = face_change_center(data)
             for i in selected_ids:
