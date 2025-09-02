@@ -128,7 +128,6 @@ class MDP:
                             result.handedness[i][0].category_name: result.hand_landmarks[i]
                             for i in range(len(result.hand_landmarks))
                         }
-
                         data[count_image]["hand"] = {"left": {}, "right": {}}
                         for hand_label in ["Left", "Right"]:
                             if hand_label in detected_hands:
@@ -153,7 +152,7 @@ class MDP:
                             data[count_image][model_type] = data.get(count_image - 1, {}).get(model_type, {})
                 count_image += 1
         except Exception as E:
-            print(f"\033[93m[91exception: {E}\033[0m")
+            print(f"\033[93mexception: {E}\033[0m")
         finally:
             print(f"Mediapipe processed images : {count_image}")
             cap.release()
@@ -228,10 +227,12 @@ class LandmarkDataProcess:
             if model_type == "pose":
                 result["pose"] = {}
                 print(f"find_pose_peak")
-                target = np.array( # 上下移動
-                    [np.array([data[frame]['pose'][point][pose_axis] for frame in range(len(data))]) for point in
+                target = np.array(
+                    [np.array([data[frame + 1]['pose'][point][pose_axis] - data[frame]['pose'][point][pose_axis] for frame in range(len(data) - 1)]) for point in
                      config[model_type]])
+
                 for i, point in enumerate(config[model_type]):
+                    target[i] = PalmOrientationDecide.linear_interpolate(target[i]) # 共用手部補值function
                     processed_data[model_type][point] = target[i]
                     peaks, peak_height = find_peaks(target[i], height=target[i].mean(), distance=10, prominence=prominence)
                     widths, heights, left_ips, right_ips = peak_widths(target[i], peaks)
@@ -247,6 +248,9 @@ class LandmarkDataProcess:
                         t.count_score_peak_id = point
                         temp.append(t)
                     result['pose'][point] = temp
+                for data in target:
+                    plt.plot(data)
+                    plt.show()
             elif model_type == "hand":
                 print(f"find_hand_peak")
                 temp = {}
@@ -255,12 +259,16 @@ class LandmarkDataProcess:
                         [np.array([data[frame]['hand'][which_hand][point][hand_axis] for frame in range(len(data))]) for point in
                          config[model_type]])
                     temp[which_hand] = [] #手部數據字典初始化
+                    plt.plot(target[0])
+                    plt.plot(target[1])
+                    plt.xlim(0, len(data))
+                    plt.show()
                     for i, point in enumerate(config[model_type]):
                         """手部數據遺漏點處理"""
                         target[i] = PalmOrientationDecide.avg_abs_process(target[i])
                         target[i], th = PalmOrientationDecide.threshold_filter(target[i])
                         target[i] = PalmOrientationDecide.linear_interpolate(target[i])
-                        processed_data[model_type][which_hand] = target[i]
+                        processed_data[model_type][which_hand] = target[i].copy()
                     """手部差距計算"""
                     delta = PalmOrientationDecide.palm_orientation([target[0], target[1]])
                     peaks, peak_height = find_peaks(delta, height=delta.mean(), distance=20, prominence=0.2)
@@ -348,7 +356,6 @@ class LandmarkDataProcess:
         corr = np.corrcoef(np.array(slice_0), np.array(slice_1))[0, 1]
         return corr
 
-
 class Action1:
     def __init__(self, path):
         self.config = {'pose':[15, 16]}
@@ -409,7 +416,7 @@ class Action1:
         self.score[3] = score_3
         print(f"Action1 1: {score_0}, 2: {score_1}, 3: {score_2}, 4:{score_3}")
         #endregion
-        
+
     def main_func(self):
         mdp = MDP()
         raw_data = mdp.get_data(self.video_path, list(self.config.keys()))
@@ -423,6 +430,7 @@ class Action2:
         self.score = [0 for _ in range(4)]
 
     def count_score(self, peak_data, processed_data):
+
         data = []
         peak_width = []  # 波的寬度
         peak_height = []
@@ -583,11 +591,11 @@ class Action4:
         score_1 = 100 - (abs(num_of_peak - (len(peak_data["pose"][15]) + len(peak_data["pose"][16]))) * 100 / num_of_peak)
         self.score[0] = score_1
         # 第二個判斷 振幅的一致性 相同的動作 不管左右手 用標準差的公式
-        height = np.array(peak_height)
-        height_mean = height.mean()
-        height_std = height.std()
-        height_cv = height_std / height_mean
-        score_2 = (1 - height_cv) * 100
+        left = np.array(processed_data['pose'][15])
+        right = np.array(processed_data['pose'][16])
+        corr_matrix = np.corrcoef(left, right)
+        correlation  = corr_matrix[0, 1]
+        score_2 =  correlation * 100
         self.score[1] = score_2
         # 第三個判斷 動作時間的一致性 相同的動作 看整個動作的時間 不管左右手 用標準差的公式
         width = np.array(peak_width)
@@ -597,14 +605,14 @@ class Action4:
         score_3 = (1 - width_cv) * 100
         self.score[2] = score_3
         # 第四個判斷 拍一下的流暢度 計算相關係數
-        left = np.array(processed_data['pose'][15])
-        right = np.array(processed_data['pose'][16])
-        corr_matrix = np.corrcoef(left, right)
-        correlation  = corr_matrix[0, 1]
-        score_4 =  correlation * 100
+        height = np.array(peak_height)
+        height_mean = height.mean()
+        height_std = height.std()
+        height_cv = height_std / height_mean
+        score_4 = (1 - height_cv) * 100
         self.score[3] = score_4
         # 顯示輸出
-        # print(f"Action4 1: {score_1}, 2: {score_2}, 3: {score_3}, 4:{score_4}")
+        print(f"Action4 pose 1: {score_1}, 2: {score_2}, 3: {score_3}, 4:{score_4}")
         # endregion
         # endregion
 
@@ -623,31 +631,31 @@ class Action4:
         # region score judgement
         # 第一個判斷
         num_of_peak = 6
-        score_1 = 100 - (abs(num_of_peak - (len(peak_data["hand"]["left"]) + len(peak_data["hand"]["right"]))) * 100 / num_of_peak)
-        self.score[0] = self.score[0] * 0.7 + score_1 * 0.3
-        # 第二個判斷 振幅的一致性 相同的動作 不管左右手 用標準差的公式(不用看)
-        height = np.array(peak_height)
-        height_mean = height.mean()
-        height_std = height.std()
-        height_cv = height_std / height_mean
-        score_2 = (1 - height_cv) * 100
-        self.score[1] = self.score[1]
+        score_0 = 100 - (abs(num_of_peak - (len(peak_data["hand"]["left"]) + len(peak_data["hand"]["right"]))) * 100 / num_of_peak)
+        self.score[0] = self.score[0] * 0.7 + score_0 * 0.3
+        # 第二個判斷
+        left = np.array(processed_data["hand"]["left"])
+        right = np.array(processed_data["hand"]["right"])
+        corr_matrix = np.corrcoef(left, right)
+        correlation = corr_matrix[0, 1]
+        score_1 = 100 if correlation * 100 > 70 else 60
+        self.score[1] = self.score[1] * 0.7 + score_1 * 0.3
         # 第三個判斷 動作時間的一致性 相同的動作 看整個動作的時間 不管左右手 用標準差的公式
         width = np.array(peak_width)
         width_mean = width.mean()
         width_std = width.std()
         width_cv = width_std / width_mean
-        score_3 = (1 - width_cv) * 100
-        self.score[2] = self.score[2] * 0.7 + score_3 * 0.3
+        score_2 = (1 - width_cv) * 100
+        self.score[2] = self.score[2] * 0.7 + score_2 * 0.3
         # 第四個判斷 拍一下的流暢度 計算相關係數
-        left = np.array(processed_data["hand"]["left"])
-        right = np.array(processed_data["hand"]["right"])
-        corr_matrix = np.corrcoef(left, right)
-        correlation = corr_matrix[0, 1]
-        score_4 = 100 if correlation * 100 > 70 else 60
-        self.score[3] = self.score[3] * 0.7 + score_4 * 0.3
+        height = np.array(peak_height)
+        height_mean = height.mean()
+        height_std = height.std()
+        height_cv = height_std / height_mean
+        score_3 = (1 - height_cv) * 100
+        self.score[3] = self.score[3]
         # 顯示輸出
-        # print(f"Action4 1: {score_1}, 2: {score_2}, 3: {score_3}, 4:{score_4}")
+        print(f"Action4 hand 1: {score_0}, 2: {score_1}, 3: {score_2}, 4:{score_3}")
         # endregion
         # endregion
 
@@ -747,91 +755,70 @@ class Action6:
         self.video_path = path
         self.score = [0 for _ in range(4)]
 
-    def count_score(self, raw_data):
+    def count_score(self, peak_data, processed_data):
         data = []
         peak_width = []  # 波的寬度
+        peak_height = []
         two_peak_maximum_pos_gap = []  # 兩波峰的距離
-        two_peak_distance = []  # 前一個波的結束到下一個波的開始的距離
+        movement_start_end_pos = {}
+        two_peak_distance = []  # 前一個波的結束到下一個波的開始的距離(Not Use)
         st_to_max_to_end_diff = []  # 下去 -> 上來的時間差距
-        num_of_peak = 6
-        score = 0
+        peak_pattern = []
         for point in self.config['pose']:
-            for i in range(len(raw_data[point])):
-                data.append(raw_data[point][i])
+            movement_start_end_pos[point] = {"start": peak_data['pose'][point][0].start_pos,
+                                             "end": peak_data['pose'][point][-1].end_pos}
+            for i in range(len(peak_data['pose'][point])):
+                data.append(peak_data['pose'][point][i])
         data.sort(key=lambda x: x.peak_max_pos)  # sort by peak maximum position
+
         for i in range(len(data)):
+            peak_pattern.append(data[i].count_score_peak_id)
             peak_width.append(data[i].end_pos - data[i].start_pos)
+            peak_height.append(data[i].peak_max)
             st_to_max_to_end_diff.append(
                 abs((data[i].peak_max_pos - data[i].start_pos) - (data[i].end_pos - data[i].peak_max_pos)))
             if i != 0:
                 two_peak_maximum_pos_gap.append(data[i].peak_max_pos - data[i - 1].peak_max_pos)
                 two_peak_distance.append(data[i].start_pos - data[i - 1].end_pos)
         """輸出測試"""
+        # print(f"Action1\n")
         # print(f"peak_width {peak_width}")
         # print(f"two_peak_maximum_pos_gap {two_peak_maximum_pos_gap}")
-        # print(f"two_peak_distance {two_peak_distance}")
+        # print(f"two_peak_distance {two_peak_distance}")  # 目前沒使用
         # print(f"st_to_max_to_end_diff {st_to_max_to_end_diff}")
 
-        # score judgement
-        # 第一個判斷 拍六下 每下10分 共60分
-        temp_score = 60
-        if len(data) == 12:
-            score += temp_score
-        else:
-            temp_score -= abs(6 - len(data)) * 5
-            score += max(temp_score, 0)
-        self.score[0] = max(temp_score, 0)
-        # 第二個判斷 每拍一下(上去+下來)的時間長度(差距越小越好) 共13分
+        # region score judgement
+        expected_patterns = [[15, 16, 16, 16, 15, 15], [16, 15, 15, 15, 16, 16]]
+        # 第一個判斷 正確性 (順序)
+        score_0 = LandmarkDataProcess.flexible_pattern_match(peak_pattern, expected_patterns)
+        self.score[0] = score_0
+        # 第二個判斷 左右協調性(左右相關係數)(這個動作不適用)
+        score_1 = LandmarkDataProcess.two_data_correlation(processed_data['pose'], movement_start_end_pos,
+                                                           [15, 16]) * 100
+        self.score[1] = score_1
+        # 第三個判斷 時間流暢性(長度)(動作單位 : 換手為一個單位)
         peak_width = np.array(peak_width)
         peak_width_mean = peak_width.mean()
-        temp_sc = 13
-        for i in range(len(peak_width)):
-            if abs(peak_width[i] - peak_width_mean) > 2:
-                temp_sc -= 2
-            elif abs(peak_width[i] - peak_width_mean) > 1:
-                temp_sc -= 1
-        if temp_sc < 0:
-            temp_sc = 0
-        self.score[1] = temp_sc
-        score += temp_sc
-        # 第三個判斷 拍一下間隔的時間(差距盡量要相同 越連續) 共13分
-        two_peak_maximum_pos_gap = np.array(two_peak_maximum_pos_gap)
-        two_peak_maximum_pos_gap_mean = two_peak_maximum_pos_gap.mean()
-        temp_sc = 13
-        for i in range(len(two_peak_maximum_pos_gap)):
-            if abs(two_peak_maximum_pos_gap[i] - two_peak_maximum_pos_gap_mean) > 3:
-                temp_sc -= 2
-            elif abs(two_peak_maximum_pos_gap[i] - two_peak_maximum_pos_gap_mean) > 2:
-                temp_sc -= 1
-        if temp_sc < 0:
-            temp_sc = 0
-        self.score[2] = temp_sc
-        score += temp_sc
-        # 第四個判斷 拍一下的流暢度(拍下去 與回到初始位置的時間) 共13分
-        st_to_max_to_end_diff = np.array(st_to_max_to_end_diff)
-        temp_sc = 13
-        for i in range(len(st_to_max_to_end_diff)):
-            if abs(st_to_max_to_end_diff[i]) > 6:
-                temp_sc -= 2
-            elif abs(st_to_max_to_end_diff[i]) > 5:
-                temp_sc -= 1
-        if temp_sc < 0:
-            temp_sc = 0
-        self.score[3] = temp_sc
-        score += temp_sc
-        print(f"score: {score}")
-        if score >= 80:
-            print(f"很棒")
-        elif score >= 70:
-            print(f"普通")
-        else:
-            print(f"很差")
+        peak_width_std = peak_width.std()
+        peak_width_cv = peak_width_std / peak_width_mean
+        score_2 = (1 - peak_width_cv) * 100
+        self.score[2] = score_2
+        # 第四個判斷 空間流暢性(幅度)(動作單位 : 換手為一個單位)
+        peak_height = np.array(peak_height)
+        peak_height_mean = peak_height.mean()
+        peak_height_std = peak_height.std()
+        peak_height_cv = peak_height_std / peak_height_mean
+        score_3 = (1 - peak_height_cv) * 100
+        self.score[3] = score_3
+        print(f"Action3 1: {score_0}, 2: {score_1}, 3: {score_2}, 4:{score_3}")
+        # endregion
+        # endregion
 
     def main_func(self):
         mdp = MDP()
         raw_data = mdp.get_data(self.video_path, list(self.config.keys()))
-        data = LandmarkDataProcess.find_peak(raw_data, self.config)
-        self.count_score(data)
+        peak_data, processed_data = LandmarkDataProcess.find_peak(raw_data, self.config)
+        self.count_score(peak_data)
 
 class Action7:
     def __init__(self, path):
@@ -1664,7 +1651,7 @@ class Action15:
 
 #測試用
 if __name__ == "__main__":
-    target_action = 4
+    target_action = 1
     target_dict = {
         1: Action1,
         2: Action2,
@@ -1682,8 +1669,12 @@ if __name__ == "__main__":
         14: Action14,
         15: Action15,
     }
-    file_path = fr"C:\Bilateral Coordination Record Video\test\{target_action:02d}.MOV"
+    file_path = fr"C:\Bilateral Coordination Record Video\C001_2506021923\{target_action:02d}.mp4"
     if os.path.exists(file_path):
         target_dict[target_action](file_path).main_func()
     else:
         print(f"\033[91mPath Not Found.\033[0m")
+
+    #C001_2506021854
+    #C001_2506021923
+    #C002_2506092042
