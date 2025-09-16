@@ -886,7 +886,7 @@ class Action7:
     def __init__(self, path):
         self.config = {'pose': [11, 12, 13, 14, 15, 16]}
         self.video_path = path
-        self.score = [0 for _ in range(4)]
+        self.score = [0 for _ in range(2)]
 
     def count_score(self, norm_data):
         #region feature_extraction
@@ -914,7 +914,7 @@ class Action8:
     def __init__(self, path):
         self.config = {'pose': [11, 12, 13, 14, 15, 16]}
         self.video_path = path
-        self.score = [0 for _ in range(4)]
+        self.score = [0 for _ in range(2)]
 
     def count_score(self, norm_data):
         #region feature_extraction
@@ -1190,7 +1190,7 @@ class Action13:
     def __init__(self, path):
         self.config = {'pose': [15, 16]}
         self.video_path = path
-        self.score = [0 for _ in range(4)]
+        self.score = [0 for _ in range(2)]
 
     def count_score(self, norm_data):
         # region feature_extraction
