@@ -1,6 +1,6 @@
 import tkinter as tk
 from tkinter import filedialog, messagebox
-import Action2_0
+import Action3_0
 import threading
 import os
 
@@ -20,11 +20,15 @@ def update_grid(index, result=None, not_found=False):
             label.config(text="Not video")
     else:
         scores = result.score
+        scores_len = len(result.score)
         total = sum(scores)
-        values = list(map(int, [scores[0], scores[1], scores[2], scores[3], total / 4]))
+        # values = list(map(int, [scores[0], scores[1], scores[2], scores[3]]))
 
         for i, label in enumerate(video_slots[index]):
-            label.config(text=str(values[i]))
+            if i < scores_len:
+                label.config(text=str(int(scores[i])))
+            else:
+                label.config(text="No Score")
 
 def run_all_actions(video_path):
     global video_fold_root_path
@@ -40,7 +44,7 @@ def run_all_actions(video_path):
 
         # 動態取得類別名，例如 Action1、Action2...Action15
         action_class_name = f"Action{index + 1}"
-        action_class = getattr(Action2_0, action_class_name, None)
+        action_class = getattr(Action3_0, action_class_name, None)
 
         if action_class is None:
             update_grid(index, not_found=True)
@@ -111,7 +115,7 @@ def judge_init():
     frame_index = 0
 
     # 標題名稱
-    headers = ["正確性", " 左右協調性", "時間流暢性", "空間流暢性", "總分"]
+    headers = ["1", " 2", "3", "4"]
 
     main_frame = tk.Frame(root)
     main_frame.pack()
