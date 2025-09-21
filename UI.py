@@ -3,6 +3,8 @@ from tkinter import filedialog, messagebox
 import Action3_0
 import threading
 import os
+import datetime
+from openpyxl import Workbook, load_workbook
 
 file_var = None
 score1 = None
@@ -13,22 +15,80 @@ score5 = None
 video_fold_root_path = r"C:\Bilateral Coordination Record Video"
 video_slots = None
 
+excel_lock = threading.Lock()
+start_time_str = None  # 記錄本次判斷的時間字串
+
+def init_excel():
+    """初始化共用 Excel 檔案 (scores.xlsx)，建立 15 個分頁"""
+    excel_path = os.path.join(video_fold_root_path, "scores.xlsx")
+
+    if not os.path.exists(excel_path):
+        wb = Workbook()
+        # 第一個工作表
+        ws = wb.active
+        ws.title = "影片1"
+        ws.append(["名稱", "時間", "分數1", "分數2", "分數3", "分數4"])
+
+        # 其餘 14 個分頁
+        for i in range(2, 16):
+            ws = wb.create_sheet(title=f"影片{i}")
+            ws.append(["名稱", "時間", "分數1", "分數2", "分數3", "分數4"])
+
+        wb.save(excel_path)
+    return excel_path
+
+def save_scores_to_excel(video_name, index, scores):
+    """將指定 index 的分數存到共用 scores.xlsx 的對應分頁"""
+    global start_time_str
+    excel_path = init_excel()
+
+    with excel_lock:
+        wb = load_workbook(excel_path)
+        ws = wb[f"影片{index+1}"]
+
+        # 把 No Score 轉成 -1，最多存四個
+        values = []
+        for i in range(4):
+            if i < len(scores):
+                val = scores[i]
+                if isinstance(val, (int, float)):
+                    values.append(val)
+                else:
+                    values.append(-1)
+            else:
+                values.append(-1)
+
+        ws.append([video_name, start_time_str] + values)
+        wb.save(excel_path)
+
+def start_action():
+    global start_time_str
+    video_path = file_var.get()
+
+    # 本次判斷時間 (所有 index 共用)
+    start_time_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    messagebox.showinfo("開始判斷", f"開始處理影片：{video_path}")
+    run_all_actions(video_path)
 
 def update_grid(index, result=None, not_found=False):
     if not_found:
         for label in video_slots[index]:
-            label.config(text="Not video")
+            label.config(text="No Score")
+        save_scores_to_excel(file_var.get(), index, ["No Score"]*4)
     else:
         scores = result.score
-        scores_len = len(result.score)
-        total = sum(scores)
-        # values = list(map(int, [scores[0], scores[1], scores[2], scores[3]]))
+        scores_len = len(scores)
 
+        # 更新UI
         for i, label in enumerate(video_slots[index]):
             if i < scores_len:
                 label.config(text=str(int(scores[i])))
             else:
                 label.config(text="No Score")
+
+        # 寫入 Excel
+        save_scores_to_excel(file_var.get(), index, scores)
 
 def run_all_actions(video_path):
     global video_fold_root_path
@@ -60,12 +120,15 @@ def run_all_actions(video_path):
         threading.Thread(target=worker, args=(i, name)).start()
 # 動作處理函數
 def start_action():
+    global start_time_str
     global file_var
     global score1, score2, score3, score4, score5
     global video_slots
     global video_fold_root_path
 
     video_path = file_var.get()
+
+    start_time_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     # 模擬處理程序（替換成你的動作識別處理邏輯）
     messagebox.showinfo("開始判斷", f"開始處理影片：{video_path}")
