@@ -942,7 +942,7 @@ class Action9:
     def __init__(self, path):
         self.config = {'hand' : [4, 8, 12, 16, 20]}
         self.video_path = path
-        self.score = [0 for _ in range(4)]
+        self.score = [0 for _ in range(2)]
 
     def count_score(self, norm_data):
         #region feature_extraction
@@ -960,9 +960,10 @@ class Action9:
         #end region
 
     def main_func(self):
-        mdp = MDP()
-        norm_data = mdp.get_data(self.video_path, list(self.config.keys()))
-        self.count_score(norm_data)
+        pass
+        # mdp = MDP()
+        # norm_data = mdp.get_data(self.video_path, list(self.config.keys()))
+        # self.count_score(norm_data)
 
 class Action10:
     def __init__(self, path):
