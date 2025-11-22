@@ -11,7 +11,6 @@ from pygame.transform import threshold
 from scipy.signal import find_peaks, peak_widths
 from dtaidistance import dtw
 
-
 # data_structure
 # data[frame]["pose"or"face"]["pose"=>0~32or"face"=>0~467]['x'or'y']
 # data[frame]["hand"]["left"or"right"][0~20]['x'or'y']
@@ -28,6 +27,7 @@ class MDP:
             enable_segmentation=False,
             refine_face_landmarks=False
         )
+        self.count_image = 0
         print("MediaPipe Holistic Initialized\n")
 
     @staticmethod
@@ -194,20 +194,24 @@ class MDP:
             print(f"\033[93mexception: {E}\033[0m")
         finally:
             print(f"Mediapipe processed images : {count_image}")
+            self.count_image = count_image
             cap.release()
         return data
 
     def show_test_image(self, data):
         pass
 
-    def get_data(self, video_path, models=("pose", "hand", "face")):
+    def get_data(self, video_path, models=("pose", "hand", "face"), normalize = True):
         """
         models: e.g. ("pose",) or ("pose","hand")
         """
         raw_data = self._process_video(video_path, models)
         filled = self.interpolate_nans(raw_data)
-        norm_data = self.data_normalize(filled)
-        return norm_data
+        if normalize:
+            norm_data = self.data_normalize(filled)
+            return norm_data
+        else:
+            return filled
 
 class MATCH_FUNC:
     #data_structur
@@ -393,7 +397,7 @@ class Action1:
             coef = np.corrcoef(temp_array[0][:min_len], temp_array[1][:min_len])[0, 1]
             score_temp.append(coef)
         print(f"score2 {score_temp}")
-        self.score[1] = np.array(score_temp).mean()*100
+        self.score[1] = max(0, np.array(score_temp).mean() * 100)
         #score3
         score_temp = []
         for model in time_y.keys():
@@ -404,7 +408,7 @@ class Action1:
             coef = np.corrcoef(temp_array[0][:min_len], temp_array[1][:min_len])[0, 1]
             score_temp.append(coef)
         print(f"score3 {score_temp}")
-        self.score[2] = np.array(score_temp).mean() * 100
+        self.score[2] = max(0, np.array(score_temp).mean() * 100)
         #endregion
 
     def main_func(self):
@@ -498,7 +502,7 @@ class Action2:
             coef = np.corrcoef(temp_array[0][:min_len], temp_array[1][:min_len])[0, 1]
             score_temp.append(coef)
         print(f"score2 {score_temp}")
-        self.score[1] = np.array(score_temp).mean() * 100
+        self.score[1] = max(0, np.array(score_temp).mean() * 100)
         # score3
         score_temp = []
         for model in time_y.keys():
@@ -509,7 +513,7 @@ class Action2:
             coef = np.corrcoef(temp_array[0][:min_len], temp_array[1][:min_len])[0, 1]
             score_temp.append(coef)
         print(f"score3 {score_temp}")
-        self.score[2] = np.array(score_temp).mean() * 100
+        self.score[2] = max(0, np.array(score_temp).mean() * 100)
         # endregion
 
     def main_func(self):
@@ -745,7 +749,7 @@ class Action4:
         min_len = min(len(space_y['pose'][16]), len(space_y['pose'][15]))
         coef_space = np.corrcoef(space_y['pose'][16][:min_len], space_y['pose'][15][:min_len])[0, 1]
         print(f"score1 {(coef_time * 100 + coef_space * 100) / 2}")
-        self.score[0] = (coef_time * 100 + coef_space * 100) / 2
+        self.score[0] = max(0, (coef_time * 100 + coef_space * 100) / 2)
 
         # score2
         # min_len = min(len(space_x['hand']['left'][4]), len(space_x['hand']['right'][4]))
@@ -814,7 +818,7 @@ class Action5:
         coef_1 = np.corrcoef(dist_11_16, dist_15_16)[0, 1]
         coef_2 = np.corrcoef(dist_12_15, dist_16_15)[0, 1]
         print(f"score 1 {((coef_1 + coef_2) / 2) * 100}")
-        self.score[0] = ((coef_1 + coef_2) / 2) * 100
+        self.score[0] = max(0, ((coef_1 + coef_2) / 2) * 100)
         #score 2
         threshold_12_15 = min(np.abs(dist_12_15)) + 0.05
         threshold_11_16 = min(np.abs(dist_11_16)) + 0.05
@@ -846,7 +850,7 @@ class Action5:
         else:
             score_temp.append(100)
         print(f"score 2 {np.array(score_temp).mean()}")
-        self.score[0] = np.array(score_temp).mean()
+        self.score[0] = max(0, np.array(score_temp).mean())
         # endregion
 
     def main_func(self):
@@ -944,26 +948,141 @@ class Action9:
         self.video_path = path
         self.score = [0 for _ in range(2)]
 
-    def count_score(self, norm_data):
-        #region feature_extraction
-        space_x = MATCH_FUNC.space_position(norm_data, self.config, "x")
-        time_x = MATCH_FUNC.time_speed(space_x)
-        space_y = MATCH_FUNC.space_position(norm_data, self.config, "y")
-        time_y = MATCH_FUNC.time_speed(space_y)
+    def count_score(self, data, amount_of_images):
+        """
+        thumb = 4
+        index_figer = 8
+        middle_figer = 12
+        ring_figer = 16
+        pinky_finger = 20
+        """
+        # [left 8 12 16 20 right 8 12 16 20]
+        def two_finger_dis(finger_data, which_hand):
+            finger_landmarks_list = [8, 12, 16, 20]
+            thumb = 4
+            dis_track = [[], [], [], []]
+            for frame in range(amount_of_images):
+                fig = finger_data[frame]["hand"][which_hand]
+                for c, i in enumerate(finger_landmarks_list):
+                    dis = ((fig[i]["x"]-fig[thumb]["x"]) ** 2 + (fig[i]["y"]-fig[thumb]["y"]) ** 2) ** 0.5
+                    dis_track[c].append(dis)
+            return dis_track
+
+        def moving_avg(data, window_size=5):
+            result = []
+            for d in data:
+                temp = []
+                for i in range(window_size, len(d)+1):
+                    temp.append(np.array(d[i-5:i]).mean())
+                result.append(temp)
+            return result
+
+        def find_touch(avg_data):
+            touch_map = []
+            touch_time = []
+            no_touch = True
+            right_now_touch = None
+            start_touch_time = 0
+
+            for i in range(len(avg_data[0])):
+                # 檢查是否有碰觸
+                flag = False
+                for j in range(4):
+                    if avg_data[j][i] <= 0.015:
+                        no_touch = False
+                        flag = True
+                        break
+                # 如果從有碰觸變沒碰觸
+                if not flag and not no_touch:
+                    if start_touch_time != 0:
+                        touch_time.append(i - start_touch_time // 2)
+                        start_touch_time = 0
+                    no_touch = True
+                    right_now_touch = None
+
+                # 有碰觸 找最近 並記錄
+                if not no_touch:
+                    temp_min = avg_data[0][i]
+                    temp_touch_fig = 0
+                    for j in range(1, 4):
+                        if avg_data[j][i] < temp_min:
+                            temp_min = avg_data[j][i]
+                            temp_touch_fig = j
+                    if right_now_touch is None or right_now_touch != temp_touch_fig:
+                        right_now_touch = temp_touch_fig
+                        touch_map.append(right_now_touch)
+                        if start_touch_time != 0:
+                            touch_time.append(i - start_touch_time // 2)
+                        if right_now_touch != temp_touch_fig:
+                            start_touch_time = 0
+                    start_touch_time += 1
+            return {"t_map":touch_map, "t_time":touch_time}
+
+        #region check touch every fingers
+        #right
+        right_dis = two_finger_dis(data, "right")
+        #left
+        left_dis = two_finger_dis(data, "left")
         #endregion
+        # sliding windows moving average
+        right_avg = moving_avg(right_dis)
+        left_avg = moving_avg(left_dis)
+        #count score
+        right_info = find_touch(right_avg)
+        left_info = find_touch(left_avg)
 
-        # region draw
-        # endregion
+        sequence = [0, 1, 2, 3, 3, 2, 1, 0]
+        score_temp = []
 
-        #region count score
-        #score1
-        #end region
+        temp_mv = []
+        for i in range(8, len(right_info["t_map"])+1):
+            temp_mv = right_info["t_map"][i-8:i]
+            count = 0
+            for seq in zip(sequence, temp_mv):
+                if seq[0] == seq[1]:
+                    count += 1
+        score_temp.append(count)
+        self.score[0] = np.array(score_temp).mean() * 100/8
+
+        self.score[1] = abs(np.corrcoef(right_info["t_time"], left_info["t_time"])[0, 1] * 100)
+        print(self.score)
+
+
+    def hand_area_extract(self, pose_lm_data, video_path):
+        # right hand landmarks number = [16, 18, 20, 22]
+        # left hand landmarks number = [15, 17, 19, 21]
+        # video resolution 1280 * 720
+        # Select a 150x150 pixel area
+        cap = cv2.VideoCapture(video_path)
+        h = 1280
+        w = 720
+        cut_pixel = 120 // 2
+        merged_frame = []
+        for i in range(len(pose_lm_data)):
+            ret, frame = cap.read()
+            #right hand
+            right_center_x = int((pose_lm_data[i]["pose"][16]["x"]+pose_lm_data[i]["pose"][18]["x"]+
+                        pose_lm_data[i]["pose"][20]["x"]+pose_lm_data[i]["pose"][22]["x"]) / 4 * h)
+            right_center_y = int((pose_lm_data[i]["pose"][16]["y"] + pose_lm_data[i]["pose"][18]["y"] +
+                        pose_lm_data[i]["pose"][20]["y"] + pose_lm_data[i]["pose"][22]["y"]) / 4 * w)
+            right_newframe = frame[right_center_y-cut_pixel:right_center_y+cut_pixel, right_center_x-cut_pixel:right_center_x+cut_pixel]
+            #left hand
+            left_center_x = int((pose_lm_data[i]["pose"][15]["x"]+pose_lm_data[i]["pose"][17]["x"]+
+                        pose_lm_data[i]["pose"][19]["x"]+pose_lm_data[i]["pose"][21]["x"]) / 4 * h)
+            left_center_y = int((pose_lm_data[i]["pose"][15]["y"] + pose_lm_data[i]["pose"][17]["y"] +
+                        pose_lm_data[i]["pose"][19]["y"] + pose_lm_data[i]["pose"][21]["y"]) / 4 * w)
+            left_newframe = frame[left_center_y-cut_pixel:left_center_y+cut_pixel, left_center_x-50:left_center_x+cut_pixel]
+            #merged two hands frame
+            merged_frame.append(np.concatenate((right_newframe, left_newframe), axis=1))
+        cap.release()
+        return merged_frame
 
     def main_func(self):
-        pass
-        # mdp = MDP()
-        # norm_data = mdp.get_data(self.video_path, list(self.config.keys()))
-        # self.count_score(norm_data)
+        mdp = MDP()
+        pose_data = mdp.get_data(self.video_path, "pose", normalize=False)
+        new_video = self.hand_area_extract(pose_data, self.video_path)
+        hand_landmarks = mdp.get_data(self.video_path, "hand", normalize=False)
+        self.count_score(hand_landmarks, mdp.count_image)
 
 class Action10:
     def __init__(self, path):
@@ -1028,7 +1147,7 @@ class Action10:
                     wrong += 1
             score_temp.append((len(movie_sequence[model]) - wrong) / len(movie_sequence[model]) * 100)
         print(f"score1 {score_temp}")
-        self.score[0] = np.array(score_temp).mean()
+        self.score[0] = min(0, np.array(score_temp).mean())
         # score2
         score_temp = []
         for model in space_y.keys():
@@ -1040,7 +1159,7 @@ class Action10:
             coef = np.corrcoef(temp_array[0][:min_len], temp_array[1][:min_len])[0, 1]
             score_temp.append(coef)
         print(f"score2 {score_temp}")
-        self.score[1] = np.array(score_temp).mean() * 100
+        self.score[1] = max(0, np.array(score_temp).mean() * 100)
         # score3
         score_temp = []
         for model in time_y.keys():
@@ -1051,7 +1170,7 @@ class Action10:
             coef = np.corrcoef(temp_array[0][:min_len], temp_array[1][:min_len])[0, 1]
             score_temp.append(coef)
         print(f"score3 {score_temp}")
-        self.score[2] = np.array(score_temp).mean() * 100
+        self.score[2] = max(0, np.array(score_temp).mean() * 100)
         # endregion
 
     def main_func(self):
@@ -1124,7 +1243,7 @@ class Action11:
                     wrong += 1
             score_temp.append((len(movie_sequence[model]) - wrong) / len(movie_sequence[model]) * 100)
         print(f"score1 {np.array(score_temp).mean()}")
-        self.score[0] = np.array(score_temp).mean()
+        self.score[0] = max(0, np.array(score_temp).mean())
         # score2
         score_temp = []
         for model in space_y.keys():
@@ -1136,7 +1255,7 @@ class Action11:
             coef = np.corrcoef(temp_array[0][:min_len], temp_array[1][:min_len])[0, 1]
             score_temp.append(coef)
         print(f"score2 {np.array(score_temp).mean() * 100}")
-        self.score[1] = np.array(score_temp).mean() * 100
+        self.score[1] = max(0, np.array(score_temp).mean() * 100)
         # score3
         score_temp = []
         for model in time_y.keys():
@@ -1147,7 +1266,7 @@ class Action11:
             coef = np.corrcoef(temp_array[0][:min_len], temp_array[1][:min_len])[0, 1]
             score_temp.append(coef)
         print(f"score3 {np.array(score_temp).mean() * 100}")
-        self.score[2] = np.array(score_temp).mean() * 100
+        self.score[2] = max(0, np.array(score_temp).mean() * 100)
         # endregion
 
     def main_func(self):
@@ -1282,7 +1401,7 @@ class Action14:
                     wrong += 1
             score_temp.append((len(movie_sequence[model]) - wrong) / len(movie_sequence[model]) * 100)
         print(f"score1 {score_temp}")
-        self.score[0] = np.array(score_temp).mean()
+        self.score[0] = max(0, np.array(score_temp).mean())
         # score2
         score_temp = []
         for model in space_y.keys():
@@ -1294,7 +1413,7 @@ class Action14:
             coef = np.corrcoef(temp_array[0][:min_len], temp_array[1][:min_len])[0, 1]
             score_temp.append(coef)
         print(f"score2 {score_temp}")
-        self.score[1] = np.array(score_temp).mean() * 100
+        self.score[1] = max(0, np.array(score_temp).mean() * 100)
         # score3
         score_temp = []
         for model in time_y.keys():
@@ -1305,7 +1424,7 @@ class Action14:
             coef = np.corrcoef(temp_array[0][:min_len], temp_array[1][:min_len])[0, 1]
             score_temp.append(coef)
         print(f"score3 {score_temp}")
-        self.score[2] = np.array(score_temp).mean() * 100
+        self.score[2] = max(0, np.array(score_temp).mean() * 100)
         # endregion
 
     def main_func(self):
@@ -1413,7 +1532,7 @@ class Action15:
                     wrong += 1
             score_temp.append((len(movie_sequence_y[model]) - wrong) / len(movie_sequence_y[model]) * 100)
         print(f"score1 {np.array(score_temp).mean()}")
-        self.score[0] = np.array(score_temp).mean()
+        self.score[0] = max(0, np.array(score_temp).mean())
         # score2
         score_temp = []
         coef = np.corrcoef(space_y["pose"][27], space_y["pose"][28])[0, 1]
@@ -1421,7 +1540,7 @@ class Action15:
         coef = np.corrcoef(space_x["pose"][27], space_x["pose"][28])[0, 1]
         score_temp.append(abs(coef))
         print(f"score2 {(1 - np.array(score_temp).mean()) * 100}")
-        self.score[1] = (1 - np.array(score_temp).mean()) * 100
+        self.score[1] = max(0, (1 - np.array(score_temp).mean()) * 100)
         # score3
         score_temp = []
         score_temp = []
@@ -1430,7 +1549,7 @@ class Action15:
         coef = np.corrcoef(time_y["pose"][27], time_y["pose"][28])[0, 1]
         score_temp.append(abs(coef))
         print(f"score3 {(1 - np.array(score_temp).mean()) * 100}")
-        self.score[2] = (1 - np.array(score_temp).mean()) * 100
+        self.score[2] = max(0, (1 - np.array(score_temp).mean()) * 100)
         # endregion
 
     def main_func(self):
@@ -1440,7 +1559,7 @@ class Action15:
 
 #測試用
 if __name__ == "__main__":
-    target_action = 11
+    target_action = 9
     target_dict = {
         1: Action1,
         2: Action2,
