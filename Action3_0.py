@@ -123,16 +123,27 @@ class MDP:
         return data
 
     def _process_video(self, video_path, use_models):
-        cap = cv2.VideoCapture(video_path)
+        if isinstance(video_path, str):
+            cap = cv2.VideoCapture(video_path)
+            use_cap = True
+        else:
+            frames = video_path
+            use_cap = False
+
         data = {}
         count_image = 0
 
         try:
             while True:
-                ret, frame = cap.read()
-                if not ret:
-                    print("\033[94mMessage: No Frame In Here.\033[0m")
-                    break
+                if use_cap:
+                    ret, frame = cap.read()
+                    if not ret:
+                        print("Message: No Frame In Here.")
+                        break
+                else:
+                    if count_image >= len(frames):
+                        break
+                    frame = frames[count_image]
 
                 rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                 # 直接餵 numpy RGB
@@ -195,7 +206,8 @@ class MDP:
         finally:
             print(f"Mediapipe processed images : {count_image}")
             self.count_image = count_image
-            cap.release()
+            if use_cap:
+                cap.release()
         return data
 
     def show_test_image(self, data):
@@ -1018,6 +1030,43 @@ class Action9:
                     start_touch_time += 1
             return {"t_map":touch_map, "t_time":touch_time}
 
+        def sliding_corr_max(a, b):
+            """
+            在兩個長度不同的序列 a, b 之間，
+            嘗試所有滑動位置，找出最高的 Pearson correlation。
+
+            回傳：
+              best_corr : 最高相關
+              best_i    : 對應的起點 index（短序列在長序列上的位置）
+            """
+            a = np.array(a, dtype=float)
+            b = np.array(b, dtype=float)
+
+            # 確保 a 是較長，b 是較短
+            if len(a) < len(b):
+                a, b = b, a  # swap
+
+            lenA = len(a)
+            lenB = len(b)
+
+            best_corr = -1.0
+            best_i = 0
+
+            # 滑動 b 在 a 上
+            for i in range(lenA - lenB + 1):
+                window = a[i:i + lenB]
+
+                if np.std(window) == 0 or np.std(b) == 0:
+                    corr = 0
+                else:
+                    corr = np.corrcoef(window, b)[0, 1]
+
+                if corr > best_corr:
+                    best_corr = corr
+                    best_i = i
+
+            return best_corr, best_i
+
         #region check touch every fingers
         #right
         right_dis = two_finger_dis(data, "right")
@@ -1027,6 +1076,12 @@ class Action9:
         # sliding windows moving average
         right_avg = moving_avg(right_dis)
         left_avg = moving_avg(left_dis)
+        # plt.subplot(2,1,2)
+        # plt.plot(right_avg[0])
+        # plt.plot(right_avg[1])
+        # plt.plot(right_avg[2])
+        # plt.plot(right_avg[3])
+        # plt.show()
         #count score
         right_info = find_touch(right_avg)
         left_info = find_touch(left_avg)
@@ -1035,18 +1090,32 @@ class Action9:
         score_temp = []
 
         temp_mv = []
+        max_count = 0
+        print(right_info, left_info)
+        #right
         for i in range(8, len(right_info["t_map"])+1):
             temp_mv = right_info["t_map"][i-8:i]
             count = 0
             for seq in zip(sequence, temp_mv):
                 if seq[0] == seq[1]:
                     count += 1
-        score_temp.append(count)
+            if count > max_count:
+                max_count = count
+        #left
+        for i in range(8, len(left_info["t_map"]) + 1):
+            temp_mv = left_info["t_map"][i - 8:i]
+            count = 0
+            for seq in zip(sequence, temp_mv):
+                if seq[0] == seq[1]:
+                    count += 1
+            if count > max_count:
+                max_count = count
+        score_temp.append(max_count)
         self.score[0] = np.array(score_temp).mean() * 100/8
-
-        self.score[1] = abs(np.corrcoef(right_info["t_time"], left_info["t_time"])[0, 1] * 100)
-        print(self.score)
-
+        print(f"score0: {self.score[0]}")
+        corr, idx = sliding_corr_max(right_info["t_time"], left_info["t_time"])
+        self.score[1] = abs(corr * 100)
+        print(f"score0: {self.score[1]}")
 
     def hand_area_extract(self, pose_lm_data, video_path):
         # right hand landmarks number = [16, 18, 20, 22]
@@ -1079,8 +1148,8 @@ class Action9:
 
     def main_func(self):
         mdp = MDP()
-        pose_data = mdp.get_data(self.video_path, "pose", normalize=False)
-        new_video = self.hand_area_extract(pose_data, self.video_path)
+        # pose_data = mdp.get_data(self.video_path, "pose", normalize=False)
+        # new_video = self.hand_area_extract(pose_data, self.video_path)
         hand_landmarks = mdp.get_data(self.video_path, "hand", normalize=False)
         self.count_score(hand_landmarks, mdp.count_image)
 

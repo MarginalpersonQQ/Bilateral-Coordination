@@ -130,7 +130,7 @@ def start_action():
 
     start_time_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    # 模擬處理程序（替換成你的動作識別處理邏輯）
+
     messagebox.showinfo("開始判斷", f"開始處理影片：{video_path}")
     run_all_actions(video_path)
 
