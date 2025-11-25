@@ -18,47 +18,67 @@ video_slots = None
 excel_lock = threading.Lock()
 start_time_str = None  # 記錄本次判斷的時間字串
 
-def init_excel():
-    """初始化共用 Excel 檔案 (scores.xlsx)，建立 15 個分頁"""
+def init_excel_single_sheet():
+    """建立單一工作表，格式如使用者提供的圖片。"""
     excel_path = os.path.join(video_fold_root_path, "scores.xlsx")
 
     if not os.path.exists(excel_path):
         wb = Workbook()
-        # 第一個工作表
         ws = wb.active
-        ws.title = "影片1"
-        ws.append(["名稱", "時間", "分數1", "分數2", "分數3", "分數4"])
+        ws.title = "Scores"
 
-        # 其餘 14 個分頁
-        for i in range(2, 16):
-            ws = wb.create_sheet(title=f"影片{i}")
-            ws.append(["名稱", "時間", "分數1", "分數2", "分數3", "分數4"])
+        # 第一列：影片標題 A1 A1 A1 A1 A2 A2 A2 A2 ...
+        titles = ["名稱"]
+        for i in range(1, 16):
+            titles += [f"A{i}"] * 4
+        ws.append(titles)
+
+        # 第二列：分數1 分數2 分數3 分數4 ...
+        score_names = ["名稱"]
+        for _ in range(15):
+            score_names += ["分數1", "分數2", "分數3", "分數4"]
+        ws.append(score_names)
 
         wb.save(excel_path)
+
     return excel_path
 
 def save_scores_to_excel(video_name, index, scores):
-    """將指定 index 的分數存到共用 scores.xlsx 的對應分頁"""
     global start_time_str
-    excel_path = init_excel()
+    excel_path = init_excel_single_sheet()  # 新的初始化（下面會給）
 
     with excel_lock:
         wb = load_workbook(excel_path)
-        ws = wb[f"影片{index+1}"]
+        ws = wb.active
 
-        # 把 No Score 轉成 -1，最多存四個
-        values = []
+        # 若 scores 不足 4 個 -> 補 -1
+        fixed_scores = []
         for i in range(4):
-            if i < len(scores):
-                val = scores[i]
-                if isinstance(val, (int, float)):
-                    values.append(val)
-                else:
-                    values.append(-1)
+            if i < len(scores) and isinstance(scores[i], (int, float)):
+                fixed_scores.append(scores[i])
             else:
-                values.append(-1)
+                fixed_scores.append(-1)
 
-        ws.append([video_name, start_time_str] + values)
+        # 尋找名稱是否已存在 -> 更新同一列
+        target_row = None
+        for row in range(3, ws.max_row + 1):
+            if ws.cell(row=row, column=1).value == video_name:
+                target_row = row
+                break
+
+        # 若沒有 -> 新增一列
+        if target_row is None:
+            target_row = ws.max_row + 1
+            ws.cell(row=target_row, column=1, value=video_name)
+
+        # 計算目標欄位：每個影片占 4 欄
+        # index=0 → A1 分數1~4 → column 2~5
+        # index=1 → A2 分數1~4 → column 6~9
+        start_col = index * 4 + 2
+
+        for i in range(4):
+            ws.cell(row=target_row, column=start_col + i, value=fixed_scores[i])
+
         wb.save(excel_path)
 
 def start_action():
@@ -118,6 +138,13 @@ def run_all_actions(video_path):
 
     for i, name in enumerate(filenames):
         threading.Thread(target=worker, args=(i, name)).start()
+def clear_all_slots():
+    global video_slots
+    if video_slots is None:
+        return
+    for slot_labels in video_slots:
+        for label in slot_labels:
+            label.config(text="")
 # 動作處理函數
 def start_action():
     global start_time_str
@@ -128,10 +155,15 @@ def start_action():
 
     video_path = file_var.get()
 
+    # 設定本次起始時間
     start_time_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
+    # 清空上一次的顯示結果
+    clear_all_slots()
 
     messagebox.showinfo("開始判斷", f"開始處理影片：{video_path}")
+
+    # 啟動所有動作分析
     run_all_actions(video_path)
 
 def get_video_files():
