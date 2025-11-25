@@ -602,8 +602,8 @@ class Action3:
                     if seq[0] == seq[1]:
                         count += 1
                 score_temp.append(count)
-        print(f"score1 {max(score_temp) / 6 * 100}")
-        self.score[0] = max(score_temp) / 6 * 100
+        print(f"score1 {max(0, np.array(score_temp).sum() / 6 * 100)}")
+        self.score[0] = max(0, np.array(score_temp).sum() / 6 * 100)
         # endregion
 
     def main_func(self):
@@ -854,11 +854,11 @@ class Action5:
                 find_small = False
         score_temp = []
         if count_area_12_15 != 1:
-            score_temp.append(0)
+            score_temp.append(max(0, 100 - 25*count_area_12_15))
         else:
             score_temp.append(100)
         if count_area_11_16 != 1:
-            score_temp.append(0)
+            score_temp.append(max(0, 100 - 25*count_area_11_16))
         else:
             score_temp.append(100)
         print(f"score 2 {np.array(score_temp).mean()}")
@@ -1216,7 +1216,7 @@ class Action10:
                     wrong += 1
             score_temp.append((len(movie_sequence[model]) - wrong) / len(movie_sequence[model]) * 100)
         print(f"score1 {score_temp}")
-        self.score[0] = min(0, np.array(score_temp).mean())
+        self.score[0] = max(0, np.array(score_temp).mean())
         # score2
         score_temp = []
         for model in space_y.keys():
@@ -1628,7 +1628,7 @@ class Action15:
 
 #測試用
 if __name__ == "__main__":
-    target_action = 9
+    target_action = 5
     target_dict = {
         1: Action1,
         2: Action2,
