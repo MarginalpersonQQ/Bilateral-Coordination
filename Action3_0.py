@@ -602,8 +602,9 @@ class Action3:
                     if seq[0] == seq[1]:
                         count += 1
                 score_temp.append(count)
-        print(f"score1 {max(0, np.array(score_temp).sum() / 6 * 100)}")
-        self.score[0] = max(0, np.array(score_temp).sum() / 6 * 100)
+        print(movie_sequence['pose'])
+        print(f"score1 {max(0, max(score_temp) * 100 / 6)}")
+        self.score[0] = max(0, max(score_temp) * 100 / 6)
         # endregion
 
     def main_func(self):
@@ -1628,7 +1629,7 @@ class Action15:
 
 #測試用
 if __name__ == "__main__":
-    target_action = 5
+    target_action = 3
     target_dict = {
         1: Action1,
         2: Action2,
@@ -1646,7 +1647,7 @@ if __name__ == "__main__":
         14: Action14,
         15: Action15,
     }
-    file_path = fr"C:\Bilateral Coordination Record Video\C001_2506021923\{target_action:02d}.mp4"
+    file_path = fr"C:\Bilateral Coordination Record Video\E002_2507242048\{target_action:02d}.mp4"
     if os.path.exists(file_path):
         target_dict[target_action](file_path).main_func()
     else:
