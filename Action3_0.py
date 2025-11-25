@@ -862,7 +862,7 @@ class Action5:
         else:
             score_temp.append(100)
         print(f"score 2 {np.array(score_temp).mean()}")
-        self.score[0] = max(0, np.array(score_temp).mean())
+        self.score[1] = max(0, np.array(score_temp).mean())
         # endregion
 
     def main_func(self):
