@@ -99,7 +99,7 @@ def init_parameter():
     if not os.path.exists(video_path):
         os.makedirs(save_root_path)
         print("****************************************")
-        print("ERROR: Demo Video Path Not Found.")
+        print("Notification: Demo video file are created in path: C:\Bilateral Coordination Record Video")
         print("****************************************")
     """Video Play Number"""
     video_play_number = 0  # Start from video 0

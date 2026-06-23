@@ -225,7 +225,7 @@ class MDP:
         else:
             return filled
 
-class MATCH_FUNC:
+class MATH_FUNC:
     #data_structur
     #space_pose{model:{point:[]}}(one axis)
     @staticmethod
@@ -339,12 +339,14 @@ class Action1:
     def __init__(self, path):
         self.config = {'pose':[15, 16]}
         self.video_path = path
-        self.score = [0 for _ in range(3)]
+        self.score = [0]
+        self.score_type = ["1"]
 
     def count_score(self, norm_data):
+        # This Action has one score that is sequence of action movement.
         #region feature_extraction
-        space_y = MATCH_FUNC.space_position(norm_data, self.config, "y")
-        time_y = MATCH_FUNC.time_speed(space_y)
+        space_y = MATH_FUNC.space_position(norm_data, self.config, "y")
+        time_y = MATH_FUNC.time_speed(space_y)
         #endregion
 
         #region moving_side_judge
@@ -384,8 +386,8 @@ class Action1:
         # plt.show()
         #endregion
 
-        start_info = MATCH_FUNC.find_forward(time_y, point_sequence) # score 2 and 3
-        finish_info = MATCH_FUNC.find_backward(time_y, point_sequence) # score 2 and 3
+        start_info = MATH_FUNC.find_forward(time_y, point_sequence) # score 2 and 3
+        finish_info = MATH_FUNC.find_backward(time_y, point_sequence) # score 2 and 3
         #endregion
 
         #region score count
@@ -400,27 +402,27 @@ class Action1:
         print(f"score1 {score_temp}")
         self.score[0] = np.array(score_temp).mean()
         #score2
-        score_temp = []
-        for model in space_y.keys():
-            temp_array = []
-            for point in space_y[model].keys():
-                temp_array.append(space_y[model][point][start_info[model][point][0]*2 : finish_info[model][point][0]*2+3])
-            min_len = min(map(len, temp_array))
-            coef = np.corrcoef(temp_array[0][:min_len], temp_array[1][:min_len])[0, 1]
-            score_temp.append(coef)
-        print(f"score2 {score_temp}")
-        self.score[1] = max(0, np.array(score_temp).mean() * 100)
+        # score_temp = []
+        # for model in space_y.keys():
+        #     temp_array = []
+        #     for point in space_y[model].keys():
+        #         temp_array.append(space_y[model][point][start_info[model][point][0]*2 : finish_info[model][point][0]*2+3])
+        #     min_len = min(map(len, temp_array))
+        #     coef = np.corrcoef(temp_array[0][:min_len], temp_array[1][:min_len])[0, 1]
+        #     score_temp.append(coef)
+        # print(f"score2 {score_temp}")
+        # self.score[1] = max(0, np.array(score_temp).mean() * 100)
         #score3
         score_temp = []
-        for model in time_y.keys():
-            temp_array = []
-            for point in time_y[model].keys():
-                temp_array.append(time_y[model][point][start_info[model][point][0]:finish_info[model][point][0]])
-            min_len = min(map(len, temp_array))
-            coef = np.corrcoef(temp_array[0][:min_len], temp_array[1][:min_len])[0, 1]
-            score_temp.append(coef)
-        print(f"score3 {score_temp}")
-        self.score[2] = max(0, np.array(score_temp).mean() * 100)
+        # for model in time_y.keys():
+        #     temp_array = []
+        #     for point in time_y[model].keys():
+        #         temp_array.append(time_y[model][point][start_info[model][point][0]:finish_info[model][point][0]])
+        #     min_len = min(map(len, temp_array))
+        #     coef = np.corrcoef(temp_array[0][:min_len], temp_array[1][:min_len])[0, 1]
+        #     score_temp.append(coef)
+        # print(f"score3 {score_temp}")
+        # self.score[2] = max(0, np.array(score_temp).mean() * 100)
         #endregion
 
     def main_func(self):
@@ -432,12 +434,13 @@ class Action2:
     def __init__(self, path):
         self.config = {'pose': [15, 16]}
         self.video_path = path
-        self.score = [0 for _ in range(3)]
+        self.score = [0]
+        self.score_type = ["1"]
 
     def count_score(self, norm_data):
         # region feature_extraction
-        space_y = MATCH_FUNC.space_position(norm_data, self.config, "y")
-        time_y = MATCH_FUNC.time_speed(space_y)
+        space_y = MATH_FUNC.space_position(norm_data, self.config, "y")
+        time_y = MATH_FUNC.time_speed(space_y)
         # endregion
 
         # region moving_side_judge
@@ -477,8 +480,8 @@ class Action2:
         # plt.show()
         #endregion
 
-        start_info = MATCH_FUNC.find_forward(time_y, point_sequence)  # score 2 and 3
-        finish_info = MATCH_FUNC.find_backward(time_y, point_sequence)  # score 2 and 3
+        start_info = MATH_FUNC.find_forward(time_y, point_sequence)  # score 2 and 3
+        finish_info = MATH_FUNC.find_backward(time_y, point_sequence)  # score 2 and 3
         # endregion
 
         # region score count
@@ -498,34 +501,33 @@ class Action2:
                 elif previous_site == i[0]:
                     previous_site_length += 1
                     if previous_site_length > 2:
-                        print(i)
                         wrong += 1
             score_temp.append((len(movie_sequence[model])  - wrong) / len(movie_sequence[model]) * 100)
         print(f"score1 {score_temp}")
         self.score[0] = np.array(score_temp).mean()
         # score2
-        score_temp = []
-        for model in space_y.keys():
-            temp_array = []
-            for point in space_y[model].keys():
-                temp_array.append(
-                    space_y[model][point][start_info[model][point][0] * 2: finish_info[model][point][0] * 2 + 3])
-            min_len = min(map(len, temp_array))
-            coef = np.corrcoef(temp_array[0][:min_len], temp_array[1][:min_len])[0, 1]
-            score_temp.append(coef)
-        print(f"score2 {score_temp}")
-        self.score[1] = max(0, np.array(score_temp).mean() * 100)
+        # score_temp = []
+        # for model in space_y.keys():
+        #     temp_array = []
+        #     for point in space_y[model].keys():
+        #         temp_array.append(
+        #             space_y[model][point][start_info[model][point][0] * 2: finish_info[model][point][0] * 2 + 3])
+        #     min_len = min(map(len, temp_array))
+        #     coef = np.corrcoef(temp_array[0][:min_len], temp_array[1][:min_len])[0, 1]
+        #     score_temp.append(coef)
+        # print(f"score2 {score_temp}")
+        # self.score[1] = max(0, np.array(score_temp).mean() * 100)
         # score3
-        score_temp = []
-        for model in time_y.keys():
-            temp_array = []
-            for point in time_y[model].keys():
-                temp_array.append(time_y[model][point][start_info[model][point][0]:finish_info[model][point][0]])
-            min_len = min(map(len, temp_array))
-            coef = np.corrcoef(temp_array[0][:min_len], temp_array[1][:min_len])[0, 1]
-            score_temp.append(coef)
-        print(f"score3 {score_temp}")
-        self.score[2] = max(0, np.array(score_temp).mean() * 100)
+        # score_temp = []
+        # for model in time_y.keys():
+        #     temp_array = []
+        #     for point in time_y[model].keys():
+        #         temp_array.append(time_y[model][point][start_info[model][point][0]:finish_info[model][point][0]])
+        #     min_len = min(map(len, temp_array))
+        #     coef = np.corrcoef(temp_array[0][:min_len], temp_array[1][:min_len])[0, 1]
+        #     score_temp.append(coef)
+        # print(f"score3 {score_temp}")
+        # self.score[2] = max(0, np.array(score_temp).mean() * 100)
         # endregion
 
     def main_func(self):
@@ -537,12 +539,13 @@ class Action3:
     def __init__(self, path):
         self.config = {'pose': [15, 16]}
         self.video_path = path
-        self.score = [0 for _ in range(1)]
+        self.score = [0]
+        self.score_type = ["1"]
 
     def count_score(self, norm_data):
         # region feature_extraction
-        space_y = MATCH_FUNC.space_position(norm_data, self.config, "y")
-        time_y = MATCH_FUNC.time_speed(space_y)
+        space_y = MATH_FUNC.space_position(norm_data, self.config, "y")
+        time_y = MATH_FUNC.time_speed(space_y)
         # endregion
 
         # region moving_side_judge
@@ -571,8 +574,8 @@ class Action3:
 
             # movie_sequence[[pos, point, value]]
             movie_sequence[model].sort(key=lambda x: x[1])
-        start_info = MATCH_FUNC.find_forward(time_y, point_sequence)  # score 2 and 3
-        finish_info = MATCH_FUNC.find_backward(time_y, point_sequence)  # score 2 and 3
+        start_info = MATH_FUNC.find_forward(time_y, point_sequence)  # score 2 and 3
+        finish_info = MATH_FUNC.find_backward(time_y, point_sequence)  # score 2 and 3
         # region draw
         # plt.subplot(2, 1, 1)
         # plt.plot(time_y['pose'][15])
@@ -602,7 +605,6 @@ class Action3:
                     if seq[0] == seq[1]:
                         count += 1
                 score_temp.append(count)
-        print(movie_sequence['pose'])
         print(f"score1 {max(0, max(score_temp) * 100 / 6)}")
         self.score[0] = max(0, max(score_temp) * 100 / 6)
         # endregion
@@ -616,14 +618,15 @@ class Action4:
     def __init__(self, path):
         self.config = {'pose': [15, 16], 'hand' : [4, 20]}
         self.video_path = path
-        self.score = [0 for _ in range(2)]
+        self.score = [0, 0]
+        self.score_type = ["2", "3"]
 
     def count_score(self, norm_data):
         # region feature_extraction
-        space_y = MATCH_FUNC.space_position(norm_data, self.config, "y")
-        space_x = MATCH_FUNC.space_position(norm_data, self.config, "x")
-        time_y = MATCH_FUNC.time_speed(space_y)
-        time_x = MATCH_FUNC.time_speed(space_x)
+        space_y = MATH_FUNC.space_position(norm_data, self.config, "y")
+        space_x = MATH_FUNC.space_position(norm_data, self.config, "x")
+        time_y = MATH_FUNC.time_speed(space_y)
+        time_x = MATH_FUNC.time_speed(space_x)
         # endregion
 
         # region moving_side_judge
@@ -749,10 +752,10 @@ class Action4:
         # plt.show()
         #endregion
 
-        start_info_y = MATCH_FUNC.find_forward(time_y, point_sequence_y)  # score 2 and 3
-        finish_info_y = MATCH_FUNC.find_backward(time_y, point_sequence_y)  # score 2 and 3
-        start_info_x = MATCH_FUNC.find_forward(time_y, point_sequence_y)  # score 2 and 3
-        finish_info_x = MATCH_FUNC.find_backward(time_y, point_sequence_y)  # score 2 and 3
+        start_info_y = MATH_FUNC.find_forward(time_y, point_sequence_y)  # score 2 and 3
+        finish_info_y = MATH_FUNC.find_backward(time_y, point_sequence_y)  # score 2 and 3
+        start_info_x = MATH_FUNC.find_forward(time_y, point_sequence_y)  # score 2 and 3
+        finish_info_x = MATH_FUNC.find_backward(time_y, point_sequence_y)  # score 2 and 3
         # endregion
 
         # region score count
@@ -801,8 +804,8 @@ class Action5:
 
     def count_score(self, norm_data):
         # region feature_extraction
-        space_x = MATCH_FUNC.space_position(norm_data, self.config, "x")
-        # space_y = MATCH_FUNC.space_position(norm_data, self.config, "y")
+        space_x = MATH_FUNC.space_position(norm_data, self.config, "x")
+        # space_y = MATH_FUNC.space_position(norm_data, self.config, "y")
         # endregion
         dist_15_16 = (np.array(space_x["pose"][15]) - np.array(space_x["pose"][16]))
         dist_16_15 = (np.array(space_x["pose"][16]) - np.array(space_x["pose"][15]))
@@ -879,8 +882,8 @@ class Action6:
 
     def count_score(self, norm_data):
         #region feature_extraction
-        space_x = MATCH_FUNC.space_position(norm_data, self.config, "x")
-        time_x = MATCH_FUNC.time_speed(space_x)
+        space_x = MATH_FUNC.space_position(norm_data, self.config, "x")
+        time_x = MATH_FUNC.time_speed(space_x)
         #endregion
 
         #region count score
@@ -907,8 +910,8 @@ class Action7:
 
     def count_score(self, norm_data):
         #region feature_extraction
-        space_x = MATCH_FUNC.space_position(norm_data, self.config, "x")
-        time_x = MATCH_FUNC.time_speed(space_x)
+        space_x = MATH_FUNC.space_position(norm_data, self.config, "x")
+        time_x = MATH_FUNC.time_speed(space_x)
         #endregion
 
         #region count score
@@ -935,8 +938,8 @@ class Action8:
 
     def count_score(self, norm_data):
         #region feature_extraction
-        space_x = MATCH_FUNC.space_position(norm_data, self.config, "x")
-        time_x = MATCH_FUNC.time_speed(space_x)
+        space_x = MATH_FUNC.space_position(norm_data, self.config, "x")
+        time_x = MATH_FUNC.time_speed(space_x)
         #endregion
 
         #region count score
@@ -1092,7 +1095,6 @@ class Action9:
 
         temp_mv = []
         max_count = 0
-        print(right_info, left_info)
         #right
         for i in range(8, len(right_info["t_map"])+1):
             temp_mv = right_info["t_map"][i-8:i]
@@ -1162,8 +1164,8 @@ class Action10:
 
     def count_score(self, norm_data):
         # region feature_extraction
-        space_y = MATCH_FUNC.space_position(norm_data, self.config, "y")
-        time_y = MATCH_FUNC.time_speed(space_y)
+        space_y = MATH_FUNC.space_position(norm_data, self.config, "y")
+        time_y = MATH_FUNC.time_speed(space_y)
         # endregion
 
         # region moving_side_judge
@@ -1203,8 +1205,8 @@ class Action10:
         # plt.show()
         # endregion
 
-        start_info = MATCH_FUNC.find_forward(time_y, point_sequence)  # score 2 and 3
-        finish_info = MATCH_FUNC.find_backward(time_y, point_sequence)  # score 2 and 3
+        start_info = MATH_FUNC.find_forward(time_y, point_sequence)  # score 2 and 3
+        finish_info = MATH_FUNC.find_backward(time_y, point_sequence)  # score 2 and 3
         # endregion
 
         # region score count
@@ -1256,8 +1258,8 @@ class Action11:
 
     def count_score(self, norm_data):
         # region feature_extraction
-        space_y = MATCH_FUNC.space_position(norm_data, self.config, "x")
-        time_y = MATCH_FUNC.time_speed(space_y)
+        space_y = MATH_FUNC.space_position(norm_data, self.config, "x")
+        time_y = MATH_FUNC.time_speed(space_y)
         # endregion
 
         # region moving_side_judge
@@ -1297,15 +1299,14 @@ class Action11:
         # plt.show()
         # endregion
 
-        start_info = MATCH_FUNC.find_forward(time_y, point_sequence)  # score 2 and 3
-        finish_info = MATCH_FUNC.find_backward(time_y, point_sequence)  # score 2 and 3
+        start_info = MATH_FUNC.find_forward(time_y, point_sequence)  # score 2 and 3
+        finish_info = MATH_FUNC.find_backward(time_y, point_sequence)  # score 2 and 3
         # endregion
 
         # region score count
         # score1
         wrong = 0
         score_temp = []
-        print(movie_sequence)
         for model in movie_sequence.keys():
             for i in range(1, len(movie_sequence[model])):
                 if movie_sequence[model][i - 1][0] == movie_sequence[model][i][0]  \
@@ -1352,10 +1353,10 @@ class Action12:
 
     def count_score(self, norm_data):
         # region feature_extraction
-        space_y = MATCH_FUNC.space_position(norm_data, self.config, "y")
-        time_y = MATCH_FUNC.time_speed(space_y)
-        space_x = MATCH_FUNC.space_position(norm_data, self.config, "x")
-        time_x = MATCH_FUNC.time_speed(space_x)
+        space_y = MATH_FUNC.space_position(norm_data, self.config, "y")
+        time_y = MATH_FUNC.time_speed(space_y)
+        space_x = MATH_FUNC.space_position(norm_data, self.config, "x")
+        time_x = MATH_FUNC.time_speed(space_x)
         # endregion
 
         # region score count
@@ -1384,10 +1385,10 @@ class Action13:
 
     def count_score(self, norm_data):
         # region feature_extraction
-        space_y = MATCH_FUNC.space_position(norm_data, self.config, "y")
-        time_y = MATCH_FUNC.time_speed(space_y)
-        space_x = MATCH_FUNC.space_position(norm_data, self.config, "x")
-        time_x = MATCH_FUNC.time_speed(space_x)
+        space_y = MATH_FUNC.space_position(norm_data, self.config, "y")
+        time_y = MATH_FUNC.time_speed(space_y)
+        space_x = MATH_FUNC.space_position(norm_data, self.config, "x")
+        time_x = MATH_FUNC.time_speed(space_x)
         # endregion
 
         # region score count
@@ -1416,8 +1417,8 @@ class Action14:
 
     def count_score(self, norm_data):
         # region feature_extraction
-        space_y = MATCH_FUNC.space_position(norm_data, self.config, "y")
-        time_y = MATCH_FUNC.time_speed(space_y)
+        space_y = MATH_FUNC.space_position(norm_data, self.config, "y")
+        time_y = MATH_FUNC.time_speed(space_y)
         # endregion
 
         # region moving_side_judge
@@ -1457,8 +1458,8 @@ class Action14:
         # plt.show()
         # endregion
 
-        start_info = MATCH_FUNC.find_forward(time_y, point_sequence)  # score 2 and 3
-        finish_info = MATCH_FUNC.find_backward(time_y, point_sequence)  # score 2 and 3
+        start_info = MATH_FUNC.find_forward(time_y, point_sequence)  # score 2 and 3
+        finish_info = MATH_FUNC.find_backward(time_y, point_sequence)  # score 2 and 3
         # endregion
 
         # region score count
@@ -1510,10 +1511,10 @@ class Action15:
 
     def count_score(self, norm_data):
         # region feature_extraction
-        space_x = MATCH_FUNC.space_position(norm_data, self.config, "x")
-        time_x = MATCH_FUNC.time_speed(space_x)
-        space_y = MATCH_FUNC.space_position(norm_data, self.config, "y")
-        time_y = MATCH_FUNC.time_speed(space_y)
+        space_x = MATH_FUNC.space_position(norm_data, self.config, "x")
+        time_x = MATH_FUNC.time_speed(space_x)
+        space_y = MATH_FUNC.space_position(norm_data, self.config, "y")
+        time_y = MATH_FUNC.time_speed(space_y)
         # endregion
 
         # region moving_side_judge
@@ -1567,10 +1568,10 @@ class Action15:
             # movie_sequence[[pos, point, value]]
             movie_sequence_x[model].sort(key=lambda x: x[1])
 
-        start_info_x = MATCH_FUNC.find_forward(time_x, point_sequence_x)  # score 2 and 3
-        finish_info_x = MATCH_FUNC.find_backward(time_x, point_sequence_x)  # score 2 and 3
-        start_info_y = MATCH_FUNC.find_forward(time_y, point_sequence_y)  # score 2 and 3
-        finish_info_y = MATCH_FUNC.find_backward(time_y, point_sequence_y)  # score 2 and 3
+        start_info_x = MATH_FUNC.find_forward(time_x, point_sequence_x)  # score 2 and 3
+        finish_info_x = MATH_FUNC.find_backward(time_x, point_sequence_x)  # score 2 and 3
+        start_info_y = MATH_FUNC.find_forward(time_y, point_sequence_y)  # score 2 and 3
+        finish_info_y = MATH_FUNC.find_backward(time_y, point_sequence_y)  # score 2 and 3
 
         # region draw
         # plt.subplot(2, 1, 1)

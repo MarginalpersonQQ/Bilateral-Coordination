@@ -17,8 +17,11 @@ video_slots = None
 
 excel_lock = threading.Lock()
 start_time_str = None  # 記錄本次判斷的時間字串
+amount_of_scores = 1
+amount_of_actions = 15
 
 def init_excel_single_sheet():
+    global amount_of_scores, amount_of_actions
     """建立單一工作表，格式如使用者提供的圖片。"""
     excel_path = os.path.join(video_fold_root_path, "scores.xlsx")
 
@@ -28,15 +31,15 @@ def init_excel_single_sheet():
         ws.title = "Scores"
 
         # 第一列：影片標題 A1 A1 A1 A1 A2 A2 A2 A2 ...
-        titles = ["名稱"]
+        titles = ["動作"]
         for i in range(1, 16):
-            titles += [f"A{i}"] * 4
+            titles += [f"Action {i}"] * amount_of_scores
         ws.append(titles)
 
         # 第二列：分數1 分數2 分數3 分數4 ...
         score_names = ["名稱"]
-        for _ in range(15):
-            score_names += ["分數1", "分數2", "分數3", "分數4"]
+        for i in range(amount_of_actions):
+            score_names += [f"得分{i}"]
         ws.append(score_names)
 
         wb.save(excel_path)
@@ -44,7 +47,8 @@ def init_excel_single_sheet():
     return excel_path
 
 def save_scores_to_excel(video_name, index, scores):
-    global start_time_str
+    global start_time_str, amount_of_scores, amount_of_actions
+
     excel_path = init_excel_single_sheet()  # 新的初始化（下面會給）
 
     with excel_lock:
@@ -53,7 +57,7 @@ def save_scores_to_excel(video_name, index, scores):
 
         # 若 scores 不足 4 個 -> 補 -1
         fixed_scores = []
-        for i in range(4):
+        for i in range(amount_of_scores):
             if i < len(scores) and isinstance(scores[i], (int, float)):
                 fixed_scores.append(scores[i])
             else:
@@ -74,9 +78,9 @@ def save_scores_to_excel(video_name, index, scores):
         # 計算目標欄位：每個影片占 4 欄
         # index=0 → A1 分數1~4 → column 2~5
         # index=1 → A2 分數1~4 → column 6~9
-        start_col = index * 4 + 2
+        start_col = index * amount_of_scores + 2
 
-        for i in range(4):
+        for i in range(amount_of_scores):
             ws.cell(row=target_row, column=start_col + i, value=fixed_scores[i])
 
         wb.save(excel_path)
@@ -92,10 +96,12 @@ def start_action():
     run_all_actions(video_path)
 
 def update_grid(index, result=None, not_found=False):
+    global video_slots
+
     if not_found:
         for label in video_slots[index]:
             label.config(text="No Score")
-        save_scores_to_excel(file_var.get(), index, ["No Score"]*4)
+        save_scores_to_excel(file_var.get(), index, ["No Score"]*amount_of_scores)
     else:
         scores = result.score
         scores_len = len(scores)
@@ -182,7 +188,7 @@ def judge_init():
     # 主視窗設定
     root = tk.Tk()
     root.title("動作判斷系統")
-    root.geometry("1024x1024")
+    root.geometry("1024x512")
 
     # 影片選擇區
     tk.Label(root, text="選擇影片檔案：", font=("Arial", 18, "bold")).pack(pady=10)
@@ -210,7 +216,7 @@ def judge_init():
     frame_index = 0
 
     # 標題名稱
-    headers = ["1", " 2", "3", "4"]
+    headers = ["分數"]
 
     main_frame = tk.Frame(root)
     main_frame.pack()
@@ -222,7 +228,7 @@ def judge_init():
             if frame_index >= frame_count:
                 break
 
-            video_frame = tk.LabelFrame(main_frame, text=f"影片 {frame_index + 1}", padx=5, pady=5)
+            video_frame = tk.LabelFrame(main_frame, text=f"動作 {frame_index + 1}", padx=5, pady=5)
             video_frame.grid(row=r, column=c, padx=10, pady=10)
 
             slot_labels = []  # 儲存這個影片格子的5個欄位
