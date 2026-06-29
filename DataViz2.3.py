@@ -77,51 +77,91 @@ def pose_change_center(data):
         print(ex)
     return data
 
+
 def animate_multiple_landmarks(xy_dict, video_frames, title="Landmark 動畫"):
     import matplotlib.pyplot as plt
     import matplotlib.animation as animation
+    from matplotlib.ticker import MultipleLocator
     from multiprocessing import Value
     import cv2
     import numpy as np
 
     shared_index = Value('i', 0)
 
-    fig, axs = plt.subplots(len(xy_dict), 2, figsize=(8, 4 * len(xy_dict)))
+    # 保持原本的 2 個欄位 (X, Y)
+    fig, axs = plt.subplots(len(xy_dict), 2, figsize=(10, 4 * len(xy_dict)))
     fig.suptitle(title)
 
     lines = []
+    vel_dict = {}  # 存放計算出來的速度
 
     for i, (label, (x, y)) in enumerate(xy_dict.items()):
         ax_x = axs[i][0] if len(xy_dict) > 1 else axs[0]
         ax_y = axs[i][1] if len(xy_dict) > 1 else axs[1]
 
-        ax_x.set_title(f"{label} X軸變化")
-        ax_y.set_title(f"{label} Y軸變化")
+        # 改變 1: 建立共用 X 軸但獨立 Y 軸的 twinx (雙 Y 軸)
+        ax_x_vel = ax_x.twinx()
+        ax_y_vel = ax_y.twinx()
+
+        # 改變 2: 速度用「後一點減前一點」(np.diff) 算。
+        # 因為 diff 會讓長度少 1，所以在最前面補 0，保持長度與原本位置資料一致
+        x_arr = np.array(x, dtype=float)
+        y_arr = np.array(y, dtype=float)
+        vx = np.concatenate(([0], np.diff(x_arr)))
+        vy = np.concatenate(([0], np.diff(y_arr)))
+        vel_dict[label] = (vx, vy)
+
+        ax_x.set_title(f"{label} X軸 (位置與速度)")
+        ax_y.set_title(f"{label} Y軸 (位置與速度)")
 
         ax_x.set_xlim(0, len(x))
         ax_y.set_xlim(0, len(y))
 
+        # 設定位置的 Y 軸範圍 (左邊)
         margin_ratio = 0.05
-        x_range = np.nanmax(x) - np.nanmin(x)
-        y_range = np.nanmax(y) - np.nanmin(y)
-
+        x_range = np.nanmax(x) - np.nanmin(x) if not np.all(np.isnan(x)) else 1
+        y_range = np.nanmax(y) - np.nanmin(y) if not np.all(np.isnan(y)) else 1
         ax_x.set_ylim(np.nanmin(x) - x_range * margin_ratio, np.nanmax(x) + x_range * margin_ratio)
         ax_y.set_ylim(np.nanmin(y) - y_range * margin_ratio, np.nanmax(y) + y_range * margin_ratio)
 
-        ax_x.yaxis.set_major_locator(MultipleLocator(x_range / 10))
-        ax_y.yaxis.set_major_locator(MultipleLocator(y_range / 10))
+        # 設定速度的 Y 軸範圍 (右邊)
+        vx_range = np.nanmax(vx) - np.nanmin(vx) if not np.all(np.isnan(vx)) else 1
+        vy_range = np.nanmax(vy) - np.nanmin(vy) if not np.all(np.isnan(vy)) else 1
+        ax_x_vel.set_ylim(np.nanmin(vx) - vx_range * margin_ratio, np.nanmax(vx) + vx_range * margin_ratio)
+        ax_y_vel.set_ylim(np.nanmin(vy) - vy_range * margin_ratio, np.nanmax(vy) + vy_range * margin_ratio)
 
-        line1, = ax_x.plot([], [], 'r-')
-        line2, = ax_y.plot([], [], 'b-')
-        lines.append((line1, line2))
+        # 標示左右 Y 軸的顏色與意義
+        ax_x.set_ylabel("位置", color='r')
+        ax_x_vel.set_ylabel("速度差", color='orange')
+        ax_y.set_ylabel("位置", color='b')
+        ax_y_vel.set_ylabel("速度差", color='orange')
 
+        # 改變 3: 同時畫上實線(位置)與虛線(速度)
+        line_x, = ax_x.plot([], [], 'r-', label="Position X")
+        line_vx, = ax_x_vel.plot([], [], color='orange', linestyle='--', label="Velocity X")
+
+        line_y, = ax_y.plot([], [], 'b-', label="Position Y")
+        line_vy, = ax_y_vel.plot([], [], color='orange', linestyle='--', label="Velocity Y")
+
+        lines.append((line_x, line_vx, line_y, line_vy))
+
+    # 確保兩側的 Y 軸刻度不會去擠壓到標題
     plt.tight_layout()
 
     def update(frame):
-        idx = shared_index.value % len(next(iter(xy_dict.values()))[0])
-        for (x, y), (line1, line2) in zip(xy_dict.values(), lines):
-            line1.set_data(range(idx), x[:idx])
-            line2.set_data(range(idx), y[:idx])
+        max_len = len(next(iter(xy_dict.values()))[0])
+        idx = shared_index.value % max_len if max_len > 0 else 0
+
+        # 改變 4: 更新時，4 條線同時塞入資料
+        for (label, (x, y)), (line_x, line_vx, line_y, line_vy) in zip(xy_dict.items(), lines):
+            vx, vy = vel_dict[label]
+
+            line_x.set_data(range(idx), x[:idx])
+            line_vx.set_data(range(idx), vx[:idx])
+
+            line_y.set_data(range(idx), y[:idx])
+            line_vy.set_data(range(idx), vy[:idx])
+
         return [l for pair in lines for l in pair]
 
     ani = animation.FuncAnimation(fig, update, frames=len(video_frames), interval=30, blit=True)
@@ -129,6 +169,8 @@ def animate_multiple_landmarks(xy_dict, video_frames, title="Landmark 動畫"):
     def video_thread():
         i = 0
         while True:
+            if not video_frames:
+                break
             frame = video_frames[i % len(video_frames)]
             shared_index.value = i % len(video_frames)
             i += 1
@@ -141,6 +183,12 @@ def animate_multiple_landmarks(xy_dict, video_frames, title="Landmark 動畫"):
     video_t.start()
     plt.show()
     video_t.join()
+
+def count_cross_value(thumb, pinky, wrist):
+    thumb_vector = np.array([thumb[0]-wrist[0], thumb[1]-wrist[1]])
+    pinky_vector = np.array([pinky[0]-wrist[0], pinky[1]-wrist[1]])
+
+    return np.cross(thumb_vector, pinky_vector)
 
 class MediaPipeUI:
     def __init__(self, root):
@@ -407,7 +455,6 @@ class MediaPipeUI:
                         for (point, value) in hand_ld_keeper.items():
                             print(f"point{point}:\n x:\n" + " ".join(map(str, value["x"])) + f"\n y:\n" + " ".join(map(str, value["y"])) + "\n")
                             f.write(f"point{point}:\n x:\n" + " ".join(map(str, value["x"])) + f"\n y:\n" + " ".join(map(str, value["y"])) + "\n")
-
         elif part == "Face":
             data = face_change_center(data)
             for i in selected_ids:
