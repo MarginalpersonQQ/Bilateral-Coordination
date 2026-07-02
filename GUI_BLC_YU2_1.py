@@ -97,7 +97,10 @@ def init_parameter():
     video_path = "video_input"
     save_root_path = r"C:\Bilateral Coordination Record Video"
     if not os.path.exists(video_path):
-        os.makedirs(save_root_path)
+        try:
+            os.makedirs(save_root_path)
+        except FileExistsError:
+            print("錄影資料夾已存在")
         print("****************************************")
         print("Notification: Demo video file are created in path: C:\Bilateral Coordination Record Video")
         print("****************************************")
