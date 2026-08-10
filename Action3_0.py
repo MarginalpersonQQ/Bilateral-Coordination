@@ -355,8 +355,8 @@ class Action1:
     def __init__(self, path):
         self.config = {'pose':[15, 16]}
         self.video_path = path
-        self.score = [0]
-        self.score_type = ["1"]
+        self.score = [0, 0, 0]
+        self.score_type = ["1", "2", "3"]
 
     def count_score(self, norm_data):
         # This Action has one score that is sequence of action movement.
@@ -417,28 +417,28 @@ class Action1:
             score_temp.append( (len(movie_sequence[model])-wrong) / len(movie_sequence[model]) * 100 )
         # print(f"score1 {score_temp}")
         self.score[0] = np.array(score_temp).mean()
+
         #score2
-        # score_temp = []
-        # for model in space_y.keys():
-        #     temp_array = []
-        #     for point in space_y[model].keys():
-        #         temp_array.append(space_y[model][point][start_info[model][point][0]*2 : finish_info[model][point][0]*2+3])
-        #     min_len = min(map(len, temp_array))
-        #     coef = np.corrcoef(temp_array[0][:min_len], temp_array[1][:min_len])[0, 1]
-        #     score_temp.append(coef)
+        score_temp = []
+        for model in space_y.keys():
+            temp_array = []
+            for point in space_y[model].keys():
+                temp_array.append(space_y[model][point][start_info[model][point][0]*2 : finish_info[model][point][0]*2+3])
+            coef = MATH_FUNC.find_maximal_cc(temp_array[0], temp_array[1])
+            score_temp.append(coef)
         # print(f"score2 {score_temp}")
-        # self.score[1] = max(0, np.array(score_temp).mean() * 100)
+        self.score[1] = max(0, np.array(score_temp).mean() * 100)
+
         #score3
         score_temp = []
-        # for model in time_y.keys():
-        #     temp_array = []
-        #     for point in time_y[model].keys():
-        #         temp_array.append(time_y[model][point][start_info[model][point][0]:finish_info[model][point][0]])
-        #     min_len = min(map(len, temp_array))
-        #     coef = np.corrcoef(temp_array[0][:min_len], temp_array[1][:min_len])[0, 1]
-        #     score_temp.append(coef)
+        for model in time_y.keys():
+            temp_array = []
+            for point in time_y[model].keys():
+                temp_array.append(time_y[model][point][start_info[model][point][0]:finish_info[model][point][0]])
+            coef = MATH_FUNC.find_maximal_cc(temp_array[0], temp_array[1])
+            score_temp.append(coef)
         # print(f"score3 {score_temp}")
-        # self.score[2] = max(0, np.array(score_temp).mean() * 100)
+        self.score[2] = max(0, np.array(score_temp).mean() * 100)
         #endregion
 
     def main_func(self):
@@ -450,8 +450,8 @@ class Action2:
     def __init__(self, path):
         self.config = {'pose': [15, 16]}
         self.video_path = path
-        self.score = [0]
-        self.score_type = ["1"]
+        self.score = [0, 0, 0]
+        self.score_type = ["1", "2", "3"]
 
     def count_score(self, norm_data):
         # region feature_extraction
@@ -521,29 +521,27 @@ class Action2:
             score_temp.append((len(movie_sequence[model])  - wrong) / len(movie_sequence[model]) * 100)
         # (f"score1 {score_temp}")
         self.score[0] = np.array(score_temp).mean()
+
         # score2
-        # score_temp = []
-        # for model in space_y.keys():
-        #     temp_array = []
-        #     for point in space_y[model].keys():
-        #         temp_array.append(
-        #             space_y[model][point][start_info[model][point][0] * 2: finish_info[model][point][0] * 2 + 3])
-        #     min_len = min(map(len, temp_array))
-        #     coef = np.corrcoef(temp_array[0][:min_len], temp_array[1][:min_len])[0, 1]
-        #     score_temp.append(coef)
-        # print(f"score2 {score_temp}")
-        # self.score[1] = max(0, np.array(score_temp).mean() * 100)
+        score_temp = []
+        for model in space_y.keys():
+            temp_array = []
+            for point in space_y[model].keys():
+                temp_array.append(
+                    space_y[model][point][start_info[model][point][0] * 2: finish_info[model][point][0] * 2 + 3])
+            coef = MATH_FUNC.find_maximal_cc(temp_array[0], temp_array[1])
+            score_temp.append(coef)
+        self.score[1] = max(0, np.array(score_temp).mean() * 100)
+
         # score3
-        # score_temp = []
-        # for model in time_y.keys():
-        #     temp_array = []
-        #     for point in time_y[model].keys():
-        #         temp_array.append(time_y[model][point][start_info[model][point][0]:finish_info[model][point][0]])
-        #     min_len = min(map(len, temp_array))
-        #     coef = np.corrcoef(temp_array[0][:min_len], temp_array[1][:min_len])[0, 1]
-        #     score_temp.append(coef)
-        # print(f"score3 {score_temp}")
-        # self.score[2] = max(0, np.array(score_temp).mean() * 100)
+        score_temp = []
+        for model in time_y.keys():
+            temp_array = []
+            for point in time_y[model].keys():
+                temp_array.append(time_y[model][point][start_info[model][point][0]:finish_info[model][point][0]])
+            coef = MATH_FUNC.find_maximal_cc(temp_array[0], temp_array[1])
+            score_temp.append(coef)
+        self.score[2] = max(0, np.array(score_temp).mean() * 100)
         # endregion
 
     def main_func(self):
@@ -555,8 +553,8 @@ class Action3:
     def __init__(self, path):
         self.config = {'pose': [15, 16]}
         self.video_path = path
-        self.score = [0]
-        self.score_type = ["1"]
+        self.score = [0, 0, 0]
+        self.score_type = ["1", "2", "3"]
 
     def count_score(self, norm_data):
         # region feature_extraction
@@ -592,6 +590,7 @@ class Action3:
             movie_sequence[model].sort(key=lambda x: x[1])
         start_info = MATH_FUNC.find_forward(time_y, point_sequence)  # score 2 and 3
         finish_info = MATH_FUNC.find_backward(time_y, point_sequence)  # score 2 and 3
+
         # region draw
         # plt.subplot(2, 1, 1)
         # plt.plot(time_y['pose'][15])
@@ -623,6 +622,27 @@ class Action3:
                 score_temp.append(count)
         # print(f"score1 {max(0, max(score_temp) * 100 / 6)}")
         self.score[0] = max(0, max(score_temp) * 100 / 6)
+
+        # score2
+        score_temp = []
+        for model in space_y.keys():
+            temp_array = []
+            for point in space_y[model].keys():
+                temp_array.append(
+                    space_y[model][point][start_info[model][point][0] * 2: finish_info[model][point][0] * 2 + 3])
+            coef = MATH_FUNC.find_maximal_cc(temp_array[0], temp_array[1])
+            score_temp.append(coef)
+        self.score[1] = max(0, np.array(score_temp).mean() * 100)
+
+        # score3
+        score_temp = []
+        for model in time_y.keys():
+            temp_array = []
+            for point in time_y[model].keys():
+                temp_array.append(time_y[model][point][start_info[model][point][0]:finish_info[model][point][0]])
+            coef = MATH_FUNC.find_maximal_cc(temp_array[0], temp_array[1])
+            score_temp.append(coef)
+        self.score[2] = max(0, np.array(score_temp).mean() * 100)
         # endregion
 
     def main_func(self):
@@ -749,8 +769,6 @@ class Action4:
 
         start_info_y = MATH_FUNC.find_forward(time_y, point_sequence_y)  # score 2 and 3
         finish_info_y = MATH_FUNC.find_backward(time_y, point_sequence_y)  # score 2 and 3
-        start_info_x = MATH_FUNC.find_forward(time_y, point_sequence_y)  # score 2 and 3
-        finish_info_x = MATH_FUNC.find_backward(time_y, point_sequence_y)  # score 2 and 3
         # endregion
 
         # region score count
@@ -781,6 +799,7 @@ class Action5:
         self.config = {'pose': [11, 12, 15, 16]}
         self.video_path = path
         self.score = [0]
+        self.type = ["1"]
 
     def count_score(self, norm_data):
         # region feature_extraction
@@ -816,37 +835,7 @@ class Action5:
         # print(f"score 1 {((coef_1 + coef_2) / 2) * 100}")
         self.score[0] = max(0, ((coef_1 + coef_2) / 2) * 100)
         #score 2
-        # threshold_12_15 = min(np.abs(dist_12_15)) + 0.05
-        # threshold_11_16 = min(np.abs(dist_11_16)) + 0.05
-        # count_area_12_15 = 0
-        # count_area_11_16 = 0
-        #
-        # find_small = False
-        # abs_12_15 = np.abs(dist_12_15)
-        # for i in range(len(dist_12_15)):
-        #     if abs_12_15[i] <= threshold_12_15 and find_small is False :
-        #         find_small = True
-        #         count_area_12_15 += 1
-        #     elif abs_12_15[i] > threshold_12_15 and find_small is True:
-        #         find_small = False
-        # abs_11_16 = np.abs(dist_11_16)
-        # for i in range(len(dist_11_16)):
-        #     if abs_11_16[i] <= threshold_11_16 and find_small is False :
-        #         find_small = True
-        #         count_area_11_16 += 1
-        #     elif abs_11_16[i] > threshold_11_16 and find_small is True:
-        #         find_small = False
-        # score_temp = []
-        # if count_area_12_15 != 1:
-        #     score_temp.append(max(0, 100 - 25*count_area_12_15))
-        # else:
-        #     score_temp.append(100)
-        # if count_area_11_16 != 1:
-        #     score_temp.append(max(0, 100 - 25*count_area_11_16))
-        # else:
-        #     score_temp.append(100)
-        # # print(f"score 2 {np.array(score_temp).mean()}")
-        # self.score[1] = max(0, np.array(score_temp).mean())
+
         # endregion
 
     def main_func(self):
@@ -1148,7 +1137,8 @@ class Action10:
     def __init__(self, path):
         self.config = {'pose': [27, 28]}
         self.video_path = path
-        self.score = [0]
+        self.score = [0, 0, 0]
+        self.type = ["1", "2", "3"]
 
     def count_score(self, norm_data):
         # region feature_extraction
@@ -1208,29 +1198,26 @@ class Action10:
             score_temp.append((len(movie_sequence[model]) - wrong) / len(movie_sequence[model]) * 100)
         # print(f"score1 {score_temp}")
         self.score[0] = max(0, np.array(score_temp).mean())
-        # # score2
-        # score_temp = []
-        # for model in space_y.keys():
-        #     temp_array = []
-        #     for point in space_y[model].keys():
-        #         temp_array.append(
-        #             space_y[model][point][start_info[model][point][0] * 2: finish_info[model][point][0] * 2 + 3])
-        #     min_len = min(map(len, temp_array))
-        #     coef = np.corrcoef(temp_array[0][:min_len], temp_array[1][:min_len])[0, 1]
-        #     score_temp.append(coef)
-        # # print(f"score2 {score_temp}")
-        # self.score[1] = max(0, np.array(score_temp).mean() * 100)
-        # # score3
-        # score_temp = []
-        # for model in time_y.keys():
-        #     temp_array = []
-        #     for point in time_y[model].keys():
-        #         temp_array.append(time_y[model][point][start_info[model][point][0]:finish_info[model][point][0]])
-        #     min_len = min(map(len, temp_array))
-        #     coef = np.corrcoef(temp_array[0][:min_len], temp_array[1][:min_len])[0, 1]
-        #     score_temp.append(coef)
-        # # print(f"score3 {score_temp}")
-        # self.score[2] = max(0, np.array(score_temp).mean() * 100)
+
+        # score2
+        score_temp = []
+        for model in space_y.keys():
+            temp_array = []
+            for point in space_y[model].keys():
+                temp_array.append(
+                    space_y[model][point][start_info[model][point][0] * 2: finish_info[model][point][0] * 2 + 3])
+            coef = MATH_FUNC.find_maximal_cc(temp_array[0], temp_array[1])
+            score_temp.append(coef)
+        self.score[1] = max(0, np.array(score_temp).mean() * 100)
+        # score3
+        score_temp = []
+        for model in time_y.keys():
+            temp_array = []
+            for point in time_y[model].keys():
+                temp_array.append(time_y[model][point][start_info[model][point][0]:finish_info[model][point][0]])
+            coef = MATH_FUNC.find_maximal_cc(temp_array[0], temp_array[1])
+            score_temp.append(coef)
+        self.score[2] = max(0, np.array(score_temp).mean() * 100)
         # endregion
 
     def main_func(self):
@@ -1242,7 +1229,8 @@ class Action11:
     def __init__(self, path):
         self.config = {'pose': [27, 28]}
         self.video_path = path
-        self.score = [0]
+        self.score = [0, 0, 0]
+        self.type = ["1", "2" ,"3"]
 
     def count_score(self, norm_data):
         # region feature_extraction
@@ -1303,29 +1291,28 @@ class Action11:
             score_temp.append((len(movie_sequence[model]) - wrong) / len(movie_sequence[model]) * 100)
         # print(f"score1 {np.array(score_temp).mean()}")
         self.score[0] = max(0, np.array(score_temp).mean())
+
         # score2
-        # score_temp = []
-        # for model in space_y.keys():
-        #     temp_array = []
-        #     for point in space_y[model].keys():
-        #         temp_array.append(
-        #             space_y[model][point][start_info[model][point][0] * 2: finish_info[model][point][0] * 2 + 3])
-        #     min_len = min(map(len, temp_array))
-        #     coef = np.corrcoef(temp_array[0][:min_len], temp_array[1][:min_len])[0, 1]
-        #     score_temp.append(coef)
-        # # print(f"score2 {np.array(score_temp).mean() * 100}")
-        # self.score[1] = max(0, np.array(score_temp).mean() * 100)
-        # # score3
-        # score_temp = []
-        # for model in time_y.keys():
-        #     temp_array = []
-        #     for point in time_y[model].keys():
-        #         temp_array.append(time_y[model][point][start_info[model][point][0]:finish_info[model][point][0]])
-        #     min_len = min(map(len, temp_array))
-        #     coef = np.corrcoef(temp_array[0][:min_len], temp_array[1][:min_len])[0, 1]
-        #     score_temp.append(coef)
-        # # print(f"score3 {np.array(score_temp).mean() * 100}")
-        # self.score[2] = max(0, np.array(score_temp).mean() * 100)
+        score_temp = []
+        for model in space_y.keys():
+            temp_array = []
+            for point in space_y[model].keys():
+                temp_array.append(
+                    space_y[model][point][start_info[model][point][0] * 2: finish_info[model][point][0] * 2 + 3])
+            coef = MATH_FUNC.find_maximal_cc(temp_array[0], temp_array[1])
+            score_temp.append(coef)
+        # print(f"score2 {np.array(score_temp).mean() * 100}")
+        self.score[1] = max(0, np.array(score_temp).mean() * 100)
+
+        # score3
+        score_temp = []
+        for model in time_y.keys():
+            temp_array = []
+            for point in time_y[model].keys():
+                temp_array.append(time_y[model][point][start_info[model][point][0]:finish_info[model][point][0]])
+            coef = MATH_FUNC.find_maximal_cc(temp_array[0], temp_array[1])
+            score_temp.append(coef)
+        self.score[2] = max(0, np.array(score_temp).mean() * 100)
         # endregion
 
     def main_func(self):
@@ -1406,7 +1393,8 @@ class Action14:
     def __init__(self, path):
         self.config = {'pose': [27, 28]}
         self.video_path = path
-        self.score = [0]
+        self.score = [0, 0, 0]
+        self.type = ["1", "2", "3"]
 
     def count_score(self, norm_data):
         # region feature_extraction
@@ -1467,28 +1455,26 @@ class Action14:
         self.score[0] = max(0, np.array(score_temp).mean())
         print(f"action14 score1: {self.score[0]}")
         # score2
-        # score_temp = []
-        # for model in space_y.keys():
-        #     temp_array = []
-        #     for point in space_y[model].keys():
-        #         temp_array.append(
-        #             space_y[model][point][start_info[model][point][0] * 2: finish_info[model][point][0] * 2 + 3])
-        #     min_len = min(map(len, temp_array))
-        #     coef = np.corrcoef(temp_array[0][:min_len], temp_array[1][:min_len])[0, 1]
-        #     score_temp.append(coef)
-        # # print(f"score2 {score_temp}")
-        # self.score[1] = max(0, np.array(score_temp).mean() * 100)
-        # # score3
-        # score_temp = []
-        # for model in time_y.keys():
-        #     temp_array = []
-        #     for point in time_y[model].keys():
-        #         temp_array.append(time_y[model][point][start_info[model][point][0]:finish_info[model][point][0]])
-        #     min_len = min(map(len, temp_array))
-        #     coef = np.corrcoef(temp_array[0][:min_len], temp_array[1][:min_len])[0, 1]
-        #     score_temp.append(coef)
-        # # print(f"score3 {score_temp}")
-        # self.score[2] = max(0, np.array(score_temp).mean() * 100)
+        score_temp = []
+        for model in space_y.keys():
+            temp_array = []
+            for point in space_y[model].keys():
+                temp_array.append(
+                    space_y[model][point][start_info[model][point][0] * 2: finish_info[model][point][0] * 2 + 3])
+            coef = MATH_FUNC.find_maximal_cc(temp_array[0], temp_array[1])
+            score_temp.append(coef)
+        self.score[1] = max(0, np.array(score_temp).mean() * 100)
+
+        # score3
+        score_temp = []
+        for model in time_y.keys():
+            temp_array = []
+            for point in time_y[model].keys():
+                temp_array.append(time_y[model][point][start_info[model][point][0]:finish_info[model][point][0]])
+            coef = MATH_FUNC.find_maximal_cc(temp_array[0], temp_array[1])
+            score_temp.append(coef)
+        # print(f"score3 {score_temp}")
+        self.score[2] = max(0, np.array(score_temp).mean() * 100)
         # endregion
 
     def main_func(self):
@@ -1500,7 +1486,8 @@ class Action15:
     def __init__(self, path):
         self.config = {'pose': [27, 28]}
         self.video_path = path
-        self.score = [0]
+        self.score = [0, 0, 0]
+        self.type = ["1", "2" ,"3"]
 
     def count_score(self, norm_data):
         # region feature_extraction
@@ -1599,22 +1586,22 @@ class Action15:
         self.score[0] = max(0, np.array(score_temp).mean())
         print(f"action15 score1: {self.score[0]}")
         # score2
-        # score_temp = []
-        # coef = np.corrcoef(space_y["pose"][27], space_y["pose"][28])[0, 1]
-        # score_temp.append(abs(coef))
-        # coef = np.corrcoef(space_x["pose"][27], space_x["pose"][28])[0, 1]
-        # score_temp.append(abs(coef))
-        # # print(f"score2 {(1 - np.array(score_temp).mean()) * 100}")
-        # self.score[1] = max(0, (1 - np.array(score_temp).mean()) * 100)
-        # # score3
-        # score_temp = []
-        # score_temp = []
-        # coef = np.corrcoef(time_x["pose"][27], time_x["pose"][28])[0, 1]
-        # score_temp.append(abs(coef))
-        # coef = np.corrcoef(time_y["pose"][27], time_y["pose"][28])[0, 1]
-        # score_temp.append(abs(coef))
-        # # print(f"score3 {(1 - np.array(score_temp).mean()) * 100}")
-        # self.score[2] = max(0, (1 - np.array(score_temp).mean()) * 100)
+        score_temp = []
+        coef = np.corrcoef(space_y["pose"][27], space_y["pose"][28])[0, 1]
+        score_temp.append(abs(coef))
+        coef = np.corrcoef(space_x["pose"][27], space_x["pose"][28])[0, 1]
+        score_temp.append(abs(coef))
+        # print(f"score2 {(1 - np.array(score_temp).mean()) * 100}")
+        self.score[1] = max(0, (1 - np.array(score_temp).mean()) * 100)
+        # score3
+        score_temp = []
+        score_temp = []
+        coef = np.corrcoef(time_x["pose"][27], time_x["pose"][28])[0, 1]
+        score_temp.append(abs(coef))
+        coef = np.corrcoef(time_y["pose"][27], time_y["pose"][28])[0, 1]
+        score_temp.append(abs(coef))
+        # print(f"score3 {(1 - np.array(score_temp).mean()) * 100}")
+        self.score[2] = max(0, (1 - np.array(score_temp).mean()) * 100)
         # endregion
 
     def main_func(self):
