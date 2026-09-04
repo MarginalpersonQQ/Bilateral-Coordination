@@ -465,9 +465,9 @@ def run_judge_program():
     global judge_program_running
     judge_program_running = True
     #原始方法
-    subprce = subprocess.Popen(["python", "UI.py"])
+    #subprce = subprocess.Popen(["python", "UI.py"])
     #打包需求
-    #subprce = subprocess.Popen(["UI.exe"])
+    subprce = subprocess.Popen(["UI.exe"])
     print("子 UI 啟動")
     subprce.wait()
     print("子 UI 已關閉")

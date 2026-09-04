@@ -1,15 +1,10 @@
 import os
-from statistics import correlation
 from turtledemo.penrose import start
 
 import cv2
 import numpy as np
 import mediapipe as mp
-import matplotlib.pyplot as plt
-import pylab as pl
-from pygame.transform import threshold
-from scipy.signal import find_peaks, peak_widths
-from dtaidistance import dtw
+from scipy.signal import savgol_filter
 
 # data_structure
 # data[frame]["pose"or"face"]["pose"=>0~32or"face"=>0~467]['x'or'y']
@@ -254,20 +249,18 @@ class MATH_FUNC:
         # data_structur
         # time_sp{model:{point:[]}}(one axis)
         time_sp = {}
-        for model in space_pos_data.keys():
+        for model, model_data in space_pos_data.items():
+            time_sp[model] = {}
             if model != "hand":
-                time_sp[model] = {}
-                for point in space_pos_data[model].keys():
-                    time_sp[model][point] = []
-                    for frame in range(2, len(space_pos_data[model][point]), 2):
-                        time_sp[model][point].append(space_pos_data[model][point][frame] - space_pos_data[model][point][frame-2])
+                for point, point_seq in model_data.items():
+                    pos_arr = np.asarray(point_seq)
+                    time_sp[model][point] = savgol_filter(pos_arr, window_length=5, polyorder=3, deriv=1, mode='interp').tolist()
             else:
-                time_sp["hand"] = {"left" : {}, "right" : {}}
-                for hand in space_pos_data[model].keys():
-                    for point in space_pos_data[model][hand].keys():
-                        time_sp[model][hand][point] = []
-                        for frame in range(2, len(space_pos_data[model][hand][point]), 2):
-                            time_sp[model][hand][point].append(space_pos_data[model][hand][point][frame] - space_pos_data[model][hand][point][frame-2])
+                for hand, hand_data in model_data.items():
+                    time_sp[model][hand] = {}
+                    for point, point_seq in hand_data.items():
+                        pos_arr = np.asarray(point_seq)
+                        time_sp[model][hand][point] = savgol_filter(pos_arr, window_length=5, polyorder=3, deriv=1,mode='interp').tolist()
         return time_sp
     @staticmethod
     def find_forward(raw_data, point_info):
@@ -350,378 +343,74 @@ class MATH_FUNC:
             max_cc = max(temp_coef, max_cc)
 
         return max_cc
-
-class Action1:
-    def __init__(self, path):
-        self.config = {'pose':[15, 16]}
-        self.video_path = path
-        self.score = [0, 0, 0]
-        self.score_type = ["1", "2", "3"]
-
-    def count_score(self, norm_data):
-        # This Action has one score that is sequence of action movement.
-        #region feature_extraction
-        space_y = MATH_FUNC.space_position(norm_data, self.config, "y")
-        time_y = MATH_FUNC.time_speed(space_y)
-        #endregion
-
-        #region moving_side_judge
-        movie_sequence = {} # score 1
-        point_sequence = {}
-        for model in time_y.keys():
-            movie_sequence[model] = []
-            point_sequence[model] = {}
-            for point in time_y[model].keys():
-                point_sequence[model][point] = []
-                min_moving_speed = max(time_y[model][point]) * 0.25
-                find = False
-                temp_info = None
-                for i, value in enumerate(time_y[model][point]):
-                    if value >= min_moving_speed and find == False:
-                        find = True
-                        temp_info = [point, i, value]
-                    elif value >= min_moving_speed and find == True:
-                        if value > temp_info[2]:
-                            temp_info = [point, i, value]
-                    elif value < min_moving_speed and find == True:
-                        find = False
-                        movie_sequence[model].append(temp_info)
-                        point_sequence[model][point].append(temp_info)
-                        temp_info = None
-
-            # movie_sequence[[pos, point, value]]
-            movie_sequence[model].sort(key=lambda x:x[1])
-
-        #region draw
-        # plt.subplot(2, 1, 1)
-        # plt.plot(time_y['pose'][15])
-        # plt.axline((0, max(time_y['pose'][15]) * 0.25), (len(time_y['pose'][15]), max(time_y['pose'][15]) * 0.25))
-        # plt.subplot(2, 1, 2)
-        # plt.plot(time_y['pose'][16])
-        # plt.axline((0, max(time_y['pose'][16]) * 0.25), (len(time_y['pose'][16]), max(time_y['pose'][16]) * 0.25))
-        # plt.show()
-        #endregion
-
-        start_info = MATH_FUNC.find_forward(time_y, point_sequence) # score 2 and 3
-        finish_info = MATH_FUNC.find_backward(time_y, point_sequence) # score 2 and 3
-        #endregion
-
-        #region score count
-        #score1
-        wrong = 0
-        score_temp = []
-        for model in movie_sequence.keys():
-            for i in range(1, len(movie_sequence[model])):
-                if movie_sequence[model][i-1][0] == movie_sequence[model][i][0]:
-                    wrong += 1
-            score_temp.append( (len(movie_sequence[model])-wrong) / len(movie_sequence[model]) * 100 )
-        # print(f"score1 {score_temp}")
-        self.score[0] = np.array(score_temp).mean()
-
-        #score2
-        score_temp = []
-        for model in space_y.keys():
-            temp_array = []
-            for point in space_y[model].keys():
-                temp_array.append(space_y[model][point][start_info[model][point][0]*2 : finish_info[model][point][0]*2+3])
-            coef = MATH_FUNC.find_maximal_cc(temp_array[0], temp_array[1])
-            score_temp.append(coef)
-        # print(f"score2 {score_temp}")
-        self.score[1] = max(0, np.array(score_temp).mean() * 100)
-
-        #score3
-        score_temp = []
-        for model in time_y.keys():
-            temp_array = []
-            for point in time_y[model].keys():
-                temp_array.append(time_y[model][point][start_info[model][point][0]:finish_info[model][point][0]])
-            coef = MATH_FUNC.find_maximal_cc(temp_array[0], temp_array[1])
-            score_temp.append(coef)
-        # print(f"score3 {score_temp}")
-        self.score[2] = max(0, np.array(score_temp).mean() * 100)
-        #endregion
-
-    def main_func(self):
-        mdp = MDP()
-        norm_data = mdp.get_data(self.video_path, list(self.config.keys()))
-        self.count_score(norm_data)
-
-class Action2:
-    def __init__(self, path):
-        self.config = {'pose': [15, 16]}
-        self.video_path = path
-        self.score = [0, 0, 0]
-        self.score_type = ["1", "2", "3"]
-
-    def count_score(self, norm_data):
+    @staticmethod
+    def coordinate_data_extractor(data, config):
         # region feature_extraction
-        space_y = MATH_FUNC.space_position(norm_data, self.config, "y")
-        time_y = MATH_FUNC.time_speed(space_y)
-        # endregion
-
-        # region moving_side_judge
-        movie_sequence = {}  # score 1
-        point_sequence = {}
-        for model in time_y.keys():
-            movie_sequence[model] = []
-            point_sequence[model] = {}
-            for point in time_y[model].keys():
-                point_sequence[model][point] = []
-                min_moving_speed = max(time_y[model][point]) * 0.25
-                find = False
-                temp_info = None
-                for i, value in enumerate(time_y[model][point]):
-                    if value >= min_moving_speed and find == False:
-                        find = True
-                        temp_info = [point, i, value]
-                    elif value >= min_moving_speed and find == True:
-                        if value > temp_info[2]:
-                            temp_info = [point, i, value]
-                    elif value < min_moving_speed and find == True:
-                        find = False
-                        movie_sequence[model].append(temp_info)
-                        point_sequence[model][point].append(temp_info)
-                        temp_info = None
-
-            # movie_sequence[[pos, point, value]]
-            movie_sequence[model].sort(key=lambda x: x[1])
-
-        #region draw
-        # plt.subplot(2, 1, 1)
-        # plt.plot(time_y['pose'][15])
-        # plt.axline((0, max(time_y['pose'][15]) * 0.25), (len(time_y['pose'][15]), max(time_y['pose'][15]) * 0.25))
-        # plt.subplot(2, 1, 2)
-        # plt.plot(time_y['pose'][16])
-        # plt.axline((0, max(time_y['pose'][16]) * 0.25), (len(time_y['pose'][16]), max(time_y['pose'][16]) * 0.25))
-        # plt.show()
-        #endregion
-
-        start_info = MATH_FUNC.find_forward(time_y, point_sequence)  # score 2 and 3
-        finish_info = MATH_FUNC.find_backward(time_y, point_sequence)  # score 2 and 3
-        # endregion
-
-        # region score count
-        # score1
-        wrong = 0
-        score_temp = []
-        for model in movie_sequence.keys():
-            previous_site = None
-            previous_site_length = 0
-            # set_examine
-            for i in movie_sequence[model]:
-                if previous_site is None or previous_site != i[0]:
-                    if previous_site is not None and previous_site_length < 2:
-                        wrong += 1
-                    previous_site = i[0]
-                    previous_site_length = 1
-                elif previous_site == i[0]:
-                    previous_site_length += 1
-                    if previous_site_length > 2:
-                        wrong += 1
-            score_temp.append((len(movie_sequence[model])  - wrong) / len(movie_sequence[model]) * 100)
-        # (f"score1 {score_temp}")
-        self.score[0] = np.array(score_temp).mean()
-
-        # score2
-        score_temp = []
-        for model in space_y.keys():
-            temp_array = []
-            for point in space_y[model].keys():
-                temp_array.append(
-                    space_y[model][point][start_info[model][point][0] * 2: finish_info[model][point][0] * 2 + 3])
-            coef = MATH_FUNC.find_maximal_cc(temp_array[0], temp_array[1])
-            score_temp.append(coef)
-        self.score[1] = max(0, np.array(score_temp).mean() * 100)
-
-        # score3
-        score_temp = []
-        for model in time_y.keys():
-            temp_array = []
-            for point in time_y[model].keys():
-                temp_array.append(time_y[model][point][start_info[model][point][0]:finish_info[model][point][0]])
-            coef = MATH_FUNC.find_maximal_cc(temp_array[0], temp_array[1])
-            score_temp.append(coef)
-        self.score[2] = max(0, np.array(score_temp).mean() * 100)
-        # endregion
-
-    def main_func(self):
-        mdp = MDP()
-        norm_data = mdp.get_data(self.video_path, list(self.config.keys()))
-        self.count_score(norm_data)
-
-class Action3:
-    def __init__(self, path):
-        self.config = {'pose': [15, 16]}
-        self.video_path = path
-        self.score = [0, 0, 0]
-        self.score_type = ["1", "2", "3"]
-
-    def count_score(self, norm_data):
-        # region feature_extraction
-        space_y = MATH_FUNC.space_position(norm_data, self.config, "y")
-        time_y = MATH_FUNC.time_speed(space_y)
-        # endregion
-
-        # region moving_side_judge
-        movie_sequence = {}  # score 1
-        point_sequence = {}
-        for model in time_y.keys():
-            movie_sequence[model] = []
-            point_sequence[model] = {}
-            for point in time_y[model].keys():
-                point_sequence[model][point] = []
-                min_moving_speed = max(time_y[model][point]) * 0.25
-                find = False
-                temp_info = None
-                for i, value in enumerate(time_y[model][point]):
-                    if value >= min_moving_speed and find == False:
-                        find = True
-                        temp_info = [point, i, value]
-                    elif value >= min_moving_speed and find == True:
-                        if value > temp_info[2]:
-                            temp_info = [point, i, value]
-                    elif value < min_moving_speed and find == True:
-                        find = False
-                        movie_sequence[model].append(temp_info)
-                        point_sequence[model][point].append(temp_info)
-                        temp_info = None
-
-            # movie_sequence[[pos, point, value]]
-            movie_sequence[model].sort(key=lambda x: x[1])
-        start_info = MATH_FUNC.find_forward(time_y, point_sequence)  # score 2 and 3
-        finish_info = MATH_FUNC.find_backward(time_y, point_sequence)  # score 2 and 3
-
-        # region draw
-        # plt.subplot(2, 1, 1)
-        # plt.plot(time_y['pose'][15])
-        # plt.axline((0, max(time_y['pose'][15]) * 0.25), (len(time_y['pose'][15]), max(time_y['pose'][15]) * 0.25))
-        # plt.axline((start_info['pose'][15][0], 0.1), (start_info['pose'][15][0], -0.1))
-        # plt.axline((finish_info['pose'][15][0], 0.1), (finish_info['pose'][15][0], -0.1))
-        # plt.subplot(2, 1, 2)
-        # plt.plot(time_y['pose'][16])
-        # plt.axline((0, max(time_y['pose'][16]) * 0.25), (len(time_y['pose'][16]), max(time_y['pose'][16]) * 0.25))
-        # plt.axline((start_info['pose'][16][0], 0.1), (start_info['pose'][16][0], -0.1))
-        # plt.axline((finish_info['pose'][16][0], 0.1), (finish_info['pose'][16][0], -0.1))
-        # plt.show()
-        # endregion
-        # endregion
-
-        # region score count
-        # score1
-        score_temp = []
-        sequences = [[15, 16, 16, 16, 15, 15], [16, 15, 15, 15, 16, 16]]
-        for pos in range(5, len(movie_sequence["pose"])):
-            for sequence in sequences:
-                count = 0
-                temp_mv = []
-                for i in range(pos-5,pos+1):
-                    temp_mv.append(movie_sequence['pose'][i][0])
-                for seq in zip(sequence, temp_mv):
-                    if seq[0] == seq[1]:
-                        count += 1
-                score_temp.append(count)
-        # print(f"score1 {max(0, max(score_temp) * 100 / 6)}")
-        self.score[0] = max(0, max(score_temp) * 100 / 6)
-
-        # score2
-        score_temp = []
-        for model in space_y.keys():
-            temp_array = []
-            for point in space_y[model].keys():
-                temp_array.append(
-                    space_y[model][point][start_info[model][point][0] * 2: finish_info[model][point][0] * 2 + 3])
-            coef = MATH_FUNC.find_maximal_cc(temp_array[0], temp_array[1])
-            score_temp.append(coef)
-        self.score[1] = max(0, np.array(score_temp).mean() * 100)
-
-        # score3
-        score_temp = []
-        for model in time_y.keys():
-            temp_array = []
-            for point in time_y[model].keys():
-                temp_array.append(time_y[model][point][start_info[model][point][0]:finish_info[model][point][0]])
-            coef = MATH_FUNC.find_maximal_cc(temp_array[0], temp_array[1])
-            score_temp.append(coef)
-        self.score[2] = max(0, np.array(score_temp).mean() * 100)
-        # endregion
-
-    def main_func(self):
-        mdp = MDP()
-        norm_data = mdp.get_data(self.video_path, list(self.config.keys()))
-        self.count_score(norm_data)
-
-class Action4:
-    def __init__(self, path):
-        self.config = {'pose': [15, 16]}
-        self.video_path = path
-        self.score = [0, 0]
-        self.score_type = ["2", "3"]
-
-    def count_score(self, norm_data):
-        # region feature_extraction
-        space_y = MATH_FUNC.space_position(norm_data, self.config, "y")
-        space_x = MATH_FUNC.space_position(norm_data, self.config, "x")
+        space_y = MATH_FUNC.space_position(data, config, "y")
+        space_x = MATH_FUNC.space_position(data, config, "x")
         time_y = MATH_FUNC.time_speed(space_y)
         time_x = MATH_FUNC.time_speed(space_x)
+        return [space_x, space_y, time_x, time_y]
         # endregion
-
+    @staticmethod
+    def section_info_extractor(time_x, time_y):
         # region moving_side_judge
         # region axis y
-        movie_sequence_y = {}  # score 1
+        move_sequence_y = {}  # score 1
         point_sequence_y = {}
         for model in time_y.keys():
             if model != "hand":
-                movie_sequence_y[model] = []
+                move_sequence_y[model] = []
                 point_sequence_y[model] = {}
                 for point in time_y[model].keys():
                     point_sequence_y[model][point] = []
-                    min_moving_speed = max(time_y[model][point]) * 0.25
+                    moving_speed_threshold = max(time_y[model][point]) * 0.35
                     find = False
                     temp_info = None
                     for i, value in enumerate(time_y[model][point]):
-                        if value >= min_moving_speed and find == False:
+                        if value >= moving_speed_threshold and find == False:
                             find = True
                             temp_info = [point, i, value]
-                        elif value >= min_moving_speed and find == True:
+                        elif value >= moving_speed_threshold and find == True:
                             if value > temp_info[2]:
                                 temp_info = [point, i, value]
-                        elif value < min_moving_speed and find == True:
+                        elif value < moving_speed_threshold and find == True:
                             find = False
-                            movie_sequence_y[model].append(temp_info)
+                            move_sequence_y[model].append(temp_info)
                             point_sequence_y[model][point].append(temp_info)
                             temp_info = None
                 # movie_sequence[[pos, point, value]]
-                movie_sequence_y[model].sort(key=lambda x: x[1])
+                move_sequence_y[model].sort(key=lambda x: x[1])
             else:
-                movie_sequence_y[model] = []
-                point_sequence_y[model] = {"left":{}, "right":{}}
+                move_sequence_y[model] = []
+                point_sequence_y[model] = {"left": {}, "right": {}}
                 for hand in ["left", "right"]:
                     for point in time_y[model][hand].keys():
                         point_sequence_y[model][hand][point] = []
-                        min_moving_speed = max(time_y[model][hand][point]) * 0.25
+                        moving_speed_threshold = max(time_y[model][hand][point]) * 0.35
                         find = False
                         temp_info = None
                         for i, value in enumerate(time_y[model][hand][point]):
-                            if value >= min_moving_speed and find == False:
+                            if value >= moving_speed_threshold and find == False:
                                 find = True
                                 temp_info = [point, i, value, hand]
-                            elif value >= min_moving_speed and find == True:
+                            elif value >= moving_speed_threshold and find == True:
                                 if value > temp_info[2]:
                                     temp_info = [point, i, value, hand]
-                            elif value < min_moving_speed and find == True:
+                            elif value < moving_speed_threshold and find == True:
                                 find = False
-                                movie_sequence_y[model].append(temp_info)
+                                move_sequence_y[model].append(temp_info)
                                 point_sequence_y[model][hand][point].append(temp_info)
                                 temp_info = None
                     # movie_sequence[[pos, point, value, hand]]
-                    movie_sequence_y[model].sort(key=lambda x: x[1])
-        #endregion
+                    move_sequence_y[model].sort(key=lambda x: x[1])
+        # endregion
         # region axis x
-        movie_sequence_x = {}  # score 1
+        move_sequence_x = {}  # score 1
         point_sequence_x = {}
         for model in time_x.keys():
             if model != "hand":
-                movie_sequence_x[model] = []
+                move_sequence_x[model] = []
                 point_sequence_x[model] = {}
                 for point in time_y[model].keys():
                     point_sequence_x[model][point] = []
@@ -737,13 +426,13 @@ class Action4:
                                 temp_info = [point, i, value]
                         elif value < min_moving_speed and find == True:
                             find = False
-                            movie_sequence_x[model].append(temp_info)
+                            move_sequence_x[model].append(temp_info)
                             point_sequence_x[model][point].append(temp_info)
                             temp_info = None
                 # movie_sequence[[pos, point, value]]
-                movie_sequence_x[model].sort(key=lambda x: x[1])
+                move_sequence_x[model].sort(key=lambda x: x[1])
             else:
-                movie_sequence_x[model] = []
+                move_sequence_x[model] = []
                 point_sequence_x[model] = {"left": {}, "right": {}}
                 for hand in ["left", "right"]:
                     for point in time_y[model][hand].keys():
@@ -760,33 +449,251 @@ class Action4:
                                     temp_info = [point, i, value, hand]
                             elif value < min_moving_speed and find == True:
                                 find = False
-                                movie_sequence_x[model].append(temp_info)
+                                move_sequence_x[model].append(temp_info)
                                 point_sequence_x[model][hand][point].append(temp_info)
                                 temp_info = None
                     # movie_sequence[[pos, point, value, hand]]
-                    movie_sequence_x[model].sort(key=lambda x: x[1])
-        #endregion
-
-        start_info_y = MATH_FUNC.find_forward(time_y, point_sequence_y)  # score 2 and 3
-        finish_info_y = MATH_FUNC.find_backward(time_y, point_sequence_y)  # score 2 and 3
+                    move_sequence_x[model].sort(key=lambda x: x[1])
         # endregion
 
+        start_info_x = MATH_FUNC.find_forward(time_x, point_sequence_x)
+        finish_info_x = MATH_FUNC.find_backward(time_x, point_sequence_x)
+        start_info_y = MATH_FUNC.find_forward(time_y, point_sequence_y)  # score 2 and 3
+        finish_info_y = MATH_FUNC.find_backward(time_y, point_sequence_y)  # score 2 and 3
+        return {"start_info_x" : start_info_x,
+                "start_info_y" : start_info_y,
+                "finish_info_x" : finish_info_x,
+                "finish_info_y" : finish_info_y,
+                "move_sequence_x" : move_sequence_x,
+                "move_sequence_y" : move_sequence_y,
+                "point_sequence_x" : point_sequence_x,
+                "point_sequence_y" : point_sequence_y}
+
+class Action1:
+    def __init__(self, path):
+        self.config = {'pose':[15, 16]}
+        self.video_path = path
+        self.score = [0, 0, 0]
+        # [順續確認, 空間相關, 時間相關]
+
+    def count_score(self, norm_data):
+        # This Action has one score that is sequence of action movement.
+        #region feature_extraction
+        space_x, space_y, time_x, time_y = MATH_FUNC.coordinate_data_extractor(norm_data, self.config)
+        time_section_info = MATH_FUNC.section_info_extractor(time_x, time_y)
+        #endregion
+
+        move_sequence_y = time_section_info["move_sequence_y"]
+        start_info_y = time_section_info["start_info_y"]
+        finish_info_y = time_section_info["finish_info_y"]
+
+        #region score count
+        #score1
+        wrong = 0
+        score_temp = []
+        for model in move_sequence_y.keys():
+            for i in range(1, len(move_sequence_y[model])):
+                if move_sequence_y[model][i-1][0] == move_sequence_y[model][i][0]:
+                    wrong += 1
+            score_temp.append( (len(move_sequence_y[model])-wrong) / len(move_sequence_y[model]) * 100 )
+        # print(f"score1 {score_temp}")
+        self.score[0] = np.array(score_temp).mean()
+
+        #score2
+        score_temp = []
+        for model in space_y.keys():
+            temp_array = []
+            for point in space_y[model].keys():
+                temp_array.append(space_y[model][point][start_info_y[model][point][0]*2 : finish_info_y[model][point][0]*2+3])
+            coef = MATH_FUNC.find_maximal_cc(temp_array[0], temp_array[1])
+            score_temp.append(coef)
+        # print(f"score2 {score_temp}")
+        self.score[1] = max(0, np.array(score_temp).mean() * 100)
+
+        #score3
+        score_temp = []
+        for model in time_y.keys():
+            temp_array = []
+            for point in time_y[model].keys():
+                temp_array.append(time_y[model][point][start_info_y[model][point][0]:finish_info_y[model][point][0]])
+            coef = MATH_FUNC.find_maximal_cc(temp_array[0], temp_array[1])
+            score_temp.append(coef)
+        # print(f"score3 {score_temp}")
+        self.score[2] = max(0, np.array(score_temp).mean() * 100)
+        #endregion
+
+    def main_func(self):
+        mdp = MDP()
+        norm_data = mdp.get_data(self.video_path, list(self.config.keys()))
+        self.count_score(norm_data)
+
+class Action2:
+    def __init__(self, path):
+        self.config = {'pose': [15, 16]}
+        self.video_path = path
+        self.score = [0, 0, 0]
+        # [順序確認, 空間相關, 時間相關]
+
+    def count_score(self, norm_data):
+        # region feature_extraction
+        space_x, space_y, time_x, time_y = MATH_FUNC.coordinate_data_extractor(norm_data, self.config)
+        section_info = MATH_FUNC.section_info_extractor(time_x, time_y)
+        # endregion
+
+        move_sequence_y = section_info["move_sequence_y"]
+        start_info_y = section_info["start_info_y"]
+        finish_info_y = section_info["finish_info_y"]
+
         # region score count
-        # In this action will need to catch "time" and "space" relation scores.
-        # time relation score
-        space_data_1 = space_y["pose"][15][start_info_y["pose"][15][0] : finish_info_y["pose"][15][0]+1]
-        space_data_2 = space_y["pose"][16][start_info_y["pose"][16][0] : finish_info_y["pose"][16][0]+1]
+        # score1
+        wrong = 0
+        score_temp = []
+        for model in move_sequence_y.keys():
+            previous_site = None
+            previous_site_length = 0
+            # set_examine
+            for i in move_sequence_y[model]:
+                if previous_site is None or previous_site != i[0]:
+                    if previous_site is not None and previous_site_length < 2:
+                        wrong += 1
+                    previous_site = i[0]
+                    previous_site_length = 1
+                elif previous_site == i[0]:
+                    previous_site_length += 1
+                    if previous_site_length > 2:
+                        wrong += 1
+            score_temp.append((len(move_sequence_y[model])  - wrong) / len(move_sequence_y[model]) * 100)
+        # (f"score1 {score_temp}")
+        self.score[0] = np.array(score_temp).mean()
+
+        # score2
+        score_temp = []
+        for model in space_y.keys():
+            temp_array = []
+            for point in space_y[model].keys():
+                temp_array.append(
+                    space_y[model][point][start_info_y[model][point][0] * 2: finish_info_y[model][point][0] * 2 + 3])
+            coef = MATH_FUNC.find_maximal_cc(temp_array[0], temp_array[1])
+            score_temp.append(coef)
+        self.score[1] = max(0, np.array(score_temp).mean() * 100)
+
+        # score3
+        score_temp = []
+        for model in time_y.keys():
+            temp_array = []
+            for point in time_y[model].keys():
+                temp_array.append(time_y[model][point][start_info_y[model][point][0]:finish_info_y[model][point][0]])
+            coef = MATH_FUNC.find_maximal_cc(temp_array[0], temp_array[1])
+            score_temp.append(coef)
+        self.score[2] = max(0, np.array(score_temp).mean() * 100)
+        # endregion
+
+    def main_func(self):
+        mdp = MDP()
+        norm_data = mdp.get_data(self.video_path, list(self.config.keys()))
+        self.count_score(norm_data)
+
+class Action3:
+    def __init__(self, path):
+        self.config = {'pose': [15, 16]}
+        self.video_path = path
+        self.score = [0, 0, 0]
+        # [順序確認, 空間相關, 時間相關]
+
+    def count_score(self, norm_data):
+        # region feature_extraction
+        space_x, space_y, time_x, time_y = MATH_FUNC.coordinate_data_extractor(norm_data, self.config)
+        section_info = MATH_FUNC.section_info_extractor(time_x, time_y)
+        # endregion
+
+        move_sequence_y = section_info["move_sequence_y"]
+        start_info_y = section_info["start_info_y"]
+        finish_info_y = section_info["finish_info_y"]
+
+        # region score count
+        # score1
+        score_temp = []
+        sequences = [[15, 16, 16, 16, 15, 15], [16, 15, 15, 15, 16, 16]]
+        for pos in range(5, len(move_sequence_y["pose"])):
+            for sequence in sequences:
+                count = 0
+                temp_mv = []
+                for i in range(pos-5,pos+1):
+                    temp_mv.append(move_sequence_y['pose'][i][0])
+                for seq in zip(sequence, temp_mv):
+                    if seq[0] == seq[1]:
+                        count += 1
+                score_temp.append(count)
+        # print(f"score1 {max(0, max(score_temp) * 100 / 6)}")
+        self.score[0] = max(0, max(score_temp) * 100 / 6)
+
+        # score2
+        score_temp = []
+        for model in space_y.keys():
+            temp_array = []
+            for point in space_y[model].keys():
+                temp_array.append(
+                    space_y[model][point][start_info_y[model][point][0] * 2: finish_info_y[model][point][0] * 2 + 3])
+            coef = MATH_FUNC.find_maximal_cc(temp_array[0], temp_array[1])
+            score_temp.append(coef)
+        self.score[1] = max(0, np.array(score_temp).mean() * 100)
+
+        # score3
+        score_temp = []
+        for model in time_y.keys():
+            temp_array = []
+            for point in time_y[model].keys():
+                temp_array.append(time_y[model][point][start_info_y[model][point][0]:finish_info_y[model][point][0]])
+            coef = MATH_FUNC.find_maximal_cc(temp_array[0], temp_array[1])
+            score_temp.append(coef)
+        self.score[2] = max(0, np.array(score_temp).mean() * 100)
+        # endregion
+
+    def main_func(self):
+        mdp = MDP()
+        norm_data = mdp.get_data(self.video_path, list(self.config.keys()))
+        self.count_score(norm_data)
+
+# 補
+class Action4:
+    def __init__(self, path):
+        self.config = {'pose': [15, 16], 'hand': [0, 5, 17]}
+        self.video_path = path
+        self.score = [0, 0, 0]
+        # [翻轉確認, 空間相關, 時間相關]
+
+    def palm_direction_judgement(self, x, y):
+        threshold = 0.65
+        alpha = 0.3
+        smoothed_dir_y = None
+        current_state = "UNKNOWN"
+
+        # 1. 計算手腕 -> 掌指向量
+        dx = x[9] - x[0]
+        dy = y[9] - y[0]
+        norm = np.hypot(dx, dy)
+
+    def count_score(self, norm_data):
+        space_x, space_y, time_x, time_y = MATH_FUNC.coordinate_data_extractor(norm_data, self.config)
+        time_section_info = MATH_FUNC.section_info_extractor(time_x, time_y)
+        start_info_y = time_section_info["start_info_y"]
+        finish_info_y = time_section_info["finish_info_y"]
+        # region score count
+        self.palm_direction_judgement(space_x["hand"], space_y["hand"])
+        start_pos = int(start_info_y["pose"][15][0])
+        finish_pos = int(finish_info_y["pose"][15][0])
+        space_data_1 = space_y["pose"][15][start_pos : finish_pos+1]
+
+        start_pos = int(start_info_y["pose"][16][0])
+        finish_pos = int(finish_info_y["pose"][16][0])
+        space_data_2 = space_y["pose"][16][start_pos : finish_pos+1]
         maximal_space_cc = MATH_FUNC.find_maximal_cc(space_data_1, space_data_2)
+        self.score[1] = maximal_space_cc * 100
 
         time_data_1 = time_y["pose"][15][start_info_y["pose"][15][0] : finish_info_y["pose"][15][0]+1]
         time_data_2 = time_y["pose"][16][start_info_y["pose"][16][0] : finish_info_y["pose"][16][0]+1]
         maximal_time_cc = MATH_FUNC.find_maximal_cc(time_data_1, time_data_2)
-        self.score[0] = maximal_space_cc * 100
-        self.score[1] = maximal_time_cc * 100
-        print(self.score)
-        # print(f"action4\nmax time cc : {maximal_time_cc}\nmax space cc : {maximal_space_cc}")
-        # space relation score
-
+        self.score[2] = maximal_time_cc * 100
         # endregion
 
     def main_func(self):
@@ -843,11 +750,13 @@ class Action5:
         norm_data = mdp.get_data(self.video_path, list(self.config.keys()))
         self.count_score(norm_data)
 
+# 補
 class Action6:
     def __init__(self, path):
         self.config = {'pose': [15, 16]}
         self.video_path = path
         self.score = [0, 0]
+        self.score_type = ["1", "2", "3"]
 
     def count_score(self, norm_data):
         #region feature_extraction
@@ -871,6 +780,7 @@ class Action6:
         norm_data = mdp.get_data(self.video_path, list(self.config.keys()))
         self.count_score(norm_data)
 
+# 補
 class Action7:
     def __init__(self, path):
         self.config = {'pose': [15, 16]}
@@ -903,6 +813,7 @@ class Action7:
         norm_data = mdp.get_data(self.video_path, list(self.config.keys()))
         self.count_score(norm_data)
 
+# 補
 class Action8:
     def __init__(self, path):
         self.config = {'pose': [15, 16]}
@@ -1320,6 +1231,7 @@ class Action11:
         norm_data = mdp.get_data(self.video_path, list(self.config.keys()))
         self.count_score(norm_data)
 
+# 補
 class Action12:
     def __init__(self, path):
         self.config = {'pose': [15, 16, 27, 28]}
@@ -1357,6 +1269,7 @@ class Action12:
         norm_data = mdp.get_data(self.video_path, list(self.config.keys()))
         self.count_score(norm_data)
 
+# 補
 class Action13:
     def __init__(self, path):
         self.config = {'pose': [15, 16]}
