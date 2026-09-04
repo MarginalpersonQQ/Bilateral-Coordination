@@ -657,7 +657,7 @@ class Action3:
 # 補
 class Action4:
     def __init__(self, path):
-        self.config = {'pose': [15, 16], 'hand': [0, 5, 17]}
+        self.config = {'pose': [15, 16], 'hand': [0, 2, 9]}
         self.video_path = path
         self.score = [0, 0, 0]
         # [翻轉確認, 空間相關, 時間相關]
@@ -668,10 +668,33 @@ class Action4:
         smoothed_dir_y = None
         current_state = "UNKNOWN"
 
-        # 1. 計算手腕 -> 掌指向量
-        dx = x[9] - x[0]
-        dy = y[9] - y[0]
-        norm = np.hypot(dx, dy)
+        # 1. 建立兩條手掌邊界向量
+        v1 = np.array([x[5] - x[0], y[5] - y[0]], dtype=float)  # 手腕 -> 食指
+        v2 = np.array([x[17] - x[0], y[17] - y[0]], dtype=float)  # 手腕 -> 小指
+
+        len1 = np.linalg.norm(v1)
+        len2 = np.linalg.norm(v2)
+
+        if len1 < 1e-5 or len2 < 1e-5:
+            return "UNKNOWN"
+
+        # 正規化向量，使 cross_val 落在 [-1, 1] 之間 (即 sin(theta))
+        v1 /= len1
+        v2 /= len2
+
+        # 2. 2D 向量外積 (Z 分量)
+        cross_val = v1[0] * v2[1] - v1[1] * v2[0]
+
+        # 3. 濾除翻轉與重疊的過渡抖動 (死區)
+        if abs(cross_val) < threshold:
+            return "UNKNOWN"
+
+        # 4. 根據影像座標系 (Y向下) 與手別判定
+        # 右手掌心面對鏡頭時，0->5 轉到 0->17 為順時針 (cross_val > 0)
+        if handedness == "Right":
+            return "PALM" if cross_val > threshold else "BACK"
+        else:
+            return "PALM" if cross_val < -threshold else "BACK"
 
     def count_score(self, norm_data):
         space_x, space_y, time_x, time_y = MATH_FUNC.coordinate_data_extractor(norm_data, self.config)
