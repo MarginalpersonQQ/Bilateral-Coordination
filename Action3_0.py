@@ -661,49 +661,57 @@ class Action4:
         self.video_path = path
         self.score = [0, 0, 0]
         # [翻轉確認, 空間相關, 時間相關]
-    @staticmethod
-    def palm_direction_judgement(x, y):
-        threshold = 0.65
-        dir_seq = {"left":[], "right":[]}
-        current_state = "UNKNOWN"
 
-        # 1. 建立兩條手掌邊界向量
+    @staticmethod
+    def judge_palm_orientation(x_data, y_data):
+        dir_seq = {"left": [], "right": []}
         for hand in ["left", "right"]:
-            x0, x2, x9 = x[hand][0], x[hand][2], x[hand][9]
-            y0, y2, y9 = y[hand][0], y[hand][2], y[hand][9]
-            # 掌心朝下為-1，掌心朝上為1
             if hand == "right":
                 dir_value = 1
             else:
                 dir_value = -1
-            for i in range(len(x0)):
-                v1 = np.array([x2[i] - x0[i], y2[i] - y0[i]], dtype=float)
-                v2 = np.array([x9[i] - x0[i], y9[i] - y0[i]], dtype=float)
+            # 若該手無資料或點位不足，跳過
+            if hand not in x_data or len(x_data[hand].get(0, [])) == 0:
+                continue
+            for i in range(len(x_data[hand][0])):
+                x0, y0 = x_data[hand][0][i], y_data[hand][0][i]
+                x5, y5 = x_data[hand][5][i], y_data[hand][5][i]
+                x9, y9 = x_data[hand][9][i], y_data[hand][9][i]
+                x13, y13 = x_data[hand][13][i], y_data[hand][13][i]
+                x17, y17 = x_data[hand][17][i], y_data[hand][17][i]
 
-                len1 = np.linalg.norm(v1)
-                len2 = np.linalg.norm(v2)
+                cx5 = x5 - x0
+                cx9 = x9 - x0
+                cx13 = x13 - x0
+                cx17 = x17 - x0
 
-                if len1 < 1e-5 or len2 < 1e-5:
-                    dir_seq[hand].append(0)
-                    continue
-                # 正規化向量，使 cross_val 落在 [-1, 1] 之間 (即 sin(theta))
-                v1 /= len1
-                v2 /= len2
-
-                # 2. 2D 向量外積 (Z 分量)
-                cross_val = v1[0] * v2[1] - v1[1] * v2[0]
-
-                # 3. 濾除翻轉與重疊的過渡抖動 (死區)
-                if abs(cross_val) < threshold:
-                    dir_seq[hand].append(0)
-                    continue
-                # 4. 根據影像座標系 (Y向下) 與手別判定
-                # 右手掌心面對鏡頭時，0->2 轉到 0->9 為順時針 (cross_val > 0)
-                if cross_val > threshold:
-                    dir_seq[hand].append(dir_value)
+                # 0.75~0.125
+                score = cx17 - cx5
+                # delta = 1 朝上
+                # delta = -1 朝下
+                if cx5 > cx9 > cx13 > cx17:
+                    delta_x = dir_value
+                elif cx17 > cx13 > cx9 > cx5:
+                    delta_x = -1 * dir_value
                 else:
-                    dir_seq[hand].append(dir_value*-1)
-        print(f"left seq:{dir_seq['left']}\nright seq:{dir_seq['right']}\n")
+                    delta_x = 0
+
+                if hand == "right":
+                    if delta_x == 1 and -0.06 >= score >= -0.10:
+                        final_score = 1
+                    elif delta_x == -1 and 0.06 <= score <= 0.10:
+                        final_score = -1
+                    else:
+                        final_score = 0
+                    dir_seq[hand].append(final_score)
+                else:
+                    if delta_x == 1 and 0.06 <= score <= 0.10:
+                        final_score = 1
+                    elif delta_x == -1 and -0.06 >= score >= -0.10:
+                        final_score = -1
+                    else:
+                        final_score = 0
+                    dir_seq[hand].append(final_score)
         return dir_seq
 
     def count_score(self, norm_data):
@@ -712,9 +720,9 @@ class Action4:
         start_info_y = time_section_info["start_info_y"]
         finish_info_y = time_section_info["finish_info_y"]
 
-        # region score count
-        self.palm_direction_judgement(space_x["hand"], space_y["hand"])
-
+        # region score count # 0905
+        dir_seq = Action4.judge_palm_orientation(space_x["hand"], space_y["hand"])
+        print(f"Action 4: dir_seq = {dir_seq}")
 
         start_pos = int(start_info_y["pose"][15][0])
         finish_pos = int(finish_info_y["pose"][15][0])
