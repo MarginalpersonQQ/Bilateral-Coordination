@@ -661,52 +661,64 @@ class Action4:
         self.video_path = path
         self.score = [0, 0, 0]
         # [翻轉確認, 空間相關, 時間相關]
-
-    def palm_direction_judgement(self, x, y):
+    @staticmethod
+    def palm_direction_judgement(x, y):
         threshold = 0.65
-        alpha = 0.3
-        smoothed_dir_y = None
+        dir_seq = {"left":[], "right":[]}
         current_state = "UNKNOWN"
 
         # 1. 建立兩條手掌邊界向量
-        v1 = np.array([x[5] - x[0], y[5] - y[0]], dtype=float)  # 手腕 -> 食指
-        v2 = np.array([x[17] - x[0], y[17] - y[0]], dtype=float)  # 手腕 -> 小指
+        for hand in ["left", "right"]:
+            x0, x2, x9 = x[hand][0], x[hand][2], x[hand][9]
+            y0, y2, y9 = y[hand][0], y[hand][2], y[hand][9]
+            # 掌心朝下為-1，掌心朝上為1
+            if hand == "right":
+                dir_value = 1
+            else:
+                dir_value = -1
+            for i in range(len(x0)):
+                v1 = np.array([x2[i] - x0[i], y2[i] - y0[i]], dtype=float)
+                v2 = np.array([x9[i] - x0[i], y9[i] - y0[i]], dtype=float)
 
-        len1 = np.linalg.norm(v1)
-        len2 = np.linalg.norm(v2)
+                len1 = np.linalg.norm(v1)
+                len2 = np.linalg.norm(v2)
 
-        if len1 < 1e-5 or len2 < 1e-5:
-            return "UNKNOWN"
+                if len1 < 1e-5 or len2 < 1e-5:
+                    dir_seq[hand].append(0)
+                    continue
+                # 正規化向量，使 cross_val 落在 [-1, 1] 之間 (即 sin(theta))
+                v1 /= len1
+                v2 /= len2
 
-        # 正規化向量，使 cross_val 落在 [-1, 1] 之間 (即 sin(theta))
-        v1 /= len1
-        v2 /= len2
+                # 2. 2D 向量外積 (Z 分量)
+                cross_val = v1[0] * v2[1] - v1[1] * v2[0]
 
-        # 2. 2D 向量外積 (Z 分量)
-        cross_val = v1[0] * v2[1] - v1[1] * v2[0]
-
-        # 3. 濾除翻轉與重疊的過渡抖動 (死區)
-        if abs(cross_val) < threshold:
-            return "UNKNOWN"
-
-        # 4. 根據影像座標系 (Y向下) 與手別判定
-        # 右手掌心面對鏡頭時，0->5 轉到 0->17 為順時針 (cross_val > 0)
-        if handedness == "Right":
-            return "PALM" if cross_val > threshold else "BACK"
-        else:
-            return "PALM" if cross_val < -threshold else "BACK"
+                # 3. 濾除翻轉與重疊的過渡抖動 (死區)
+                if abs(cross_val) < threshold:
+                    dir_seq[hand].append(0)
+                    continue
+                # 4. 根據影像座標系 (Y向下) 與手別判定
+                # 右手掌心面對鏡頭時，0->2 轉到 0->9 為順時針 (cross_val > 0)
+                if cross_val > threshold:
+                    dir_seq[hand].append(dir_value)
+                else:
+                    dir_seq[hand].append(dir_value*-1)
+        print(f"left seq:{dir_seq['left']}\nright seq:{dir_seq['right']}\n")
+        return dir_seq
 
     def count_score(self, norm_data):
         space_x, space_y, time_x, time_y = MATH_FUNC.coordinate_data_extractor(norm_data, self.config)
         time_section_info = MATH_FUNC.section_info_extractor(time_x, time_y)
         start_info_y = time_section_info["start_info_y"]
         finish_info_y = time_section_info["finish_info_y"]
+
         # region score count
         self.palm_direction_judgement(space_x["hand"], space_y["hand"])
+
+
         start_pos = int(start_info_y["pose"][15][0])
         finish_pos = int(finish_info_y["pose"][15][0])
         space_data_1 = space_y["pose"][15][start_pos : finish_pos+1]
-
         start_pos = int(start_info_y["pose"][16][0])
         finish_pos = int(finish_info_y["pose"][16][0])
         space_data_2 = space_y["pose"][16][start_pos : finish_pos+1]
