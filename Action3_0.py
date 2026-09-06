@@ -5,7 +5,7 @@ import cv2
 import numpy as np
 import mediapipe as mp
 from scipy.signal import savgol_filter
-
+from scipy.spatial.distance import cdist
 # data_structure
 # data[frame]["pose"or"face"]["pose"=>0~32or"face"=>0~467]['x'or'y']
 # data[frame]["hand"]["left"or"right"][0~20]['x'or'y']
@@ -133,7 +133,7 @@ class MDP:
                 if use_cap:
                     ret, frame = cap.read()
                     if not ret:
-                        print("Message: No Frame In Here.")
+                        # print("Message: No Frame In Here.")
                         break
                 else:
                     if count_image >= len(frames):
@@ -199,7 +199,7 @@ class MDP:
         except Exception as E:
             print(f"\033[93mexception: {E}\033[0m")
         finally:
-            print(f"Mediapipe processed images : {count_image}")
+            # print(f"Mediapipe processed images : {count_image}")
             self.count_image = count_image
             if use_cap:
                 cap.release()
@@ -468,6 +468,28 @@ class MATH_FUNC:
                 "move_sequence_y" : move_sequence_y,
                 "point_sequence_x" : point_sequence_x,
                 "point_sequence_y" : point_sequence_y}
+    @ staticmethod
+    def remove_intermittent_zeros(seq):
+        """
+        輸入: [0, -1, 0, -1, 0, 1, 0, -1, 0, 1, 0]
+        輸出: [0, -1, 0, 1, 0, -1, 0, 1, 0]
+        """
+        if len(seq) < 3:
+            return seq
+
+        cleaned = list(seq)
+        # 1. 填補夾在相同數值之間的 0
+        for i in range(1, len(cleaned) - 1):
+            if cleaned[i] == 0 and cleaned[i - 1] == cleaned[i + 1] and cleaned[i - 1] != 0:
+                cleaned[i] = cleaned[i - 1]
+
+        # 2. 連續相同狀態去重
+        dedup = [cleaned[0]]
+        for val in cleaned[1:]:
+            if val != dedup[-1]:
+                dedup.append(val)
+
+        return dedup
 
 class Action1:
     def __init__(self, path):
@@ -654,75 +676,96 @@ class Action3:
         norm_data = mdp.get_data(self.video_path, list(self.config.keys()))
         self.count_score(norm_data)
 
-# 補
 class Action4:
     def __init__(self, path):
-        self.config = {'pose': [15, 16], 'hand': [0, 2, 9]}
+        self.config = {'pose': [15, 16], 'hand': [5, 9, 13, 17]}
         self.video_path = path
         self.score = [0, 0, 0]
         # [翻轉確認, 空間相關, 時間相關]
 
-    @staticmethod
-    def judge_palm_orientation(x_data, y_data):
+    def judge_palm_orientation(self, x_data, y_data):
         dir_seq = {"left": [], "right": []}
         for hand in ["left", "right"]:
             if hand == "right":
                 dir_value = 1
             else:
                 dir_value = -1
-            # 若該手無資料或點位不足，跳過
-            if hand not in x_data or len(x_data[hand].get(0, [])) == 0:
-                continue
-            for i in range(len(x_data[hand][0])):
-                x0, y0 = x_data[hand][0][i], y_data[hand][0][i]
+            data_length = len(x_data[hand][self.config['hand'][0]])
+            for i in range(data_length):
                 x5, y5 = x_data[hand][5][i], y_data[hand][5][i]
                 x9, y9 = x_data[hand][9][i], y_data[hand][9][i]
                 x13, y13 = x_data[hand][13][i], y_data[hand][13][i]
                 x17, y17 = x_data[hand][17][i], y_data[hand][17][i]
 
-                cx5 = x5 - x0
-                cx9 = x9 - x0
-                cx13 = x13 - x0
-                cx17 = x17 - x0
-
-                # 0.75~0.125
-                score = cx17 - cx5
+                # 0.35
+                score = abs(y17 - y5)
                 # delta = 1 朝上
                 # delta = -1 朝下
-                if cx5 > cx9 > cx13 > cx17:
+                if x5 > x9 > x13 > x17:
                     delta_x = dir_value
-                elif cx17 > cx13 > cx9 > cx5:
+                elif x17 > x13 > x9 > x5:
                     delta_x = -1 * dir_value
                 else:
                     delta_x = 0
-
-                if hand == "right":
-                    if delta_x == 1 and -0.06 >= score >= -0.10:
+                if score >= 0.1:
+                    if delta_x == 1:
                         final_score = 1
-                    elif delta_x == -1 and 0.06 <= score <= 0.10:
+                    elif delta_x == -1:
                         final_score = -1
                     else:
                         final_score = 0
-                    dir_seq[hand].append(final_score)
                 else:
-                    if delta_x == 1 and 0.06 <= score <= 0.10:
-                        final_score = 1
-                    elif delta_x == -1 and -0.06 >= score >= -0.10:
-                        final_score = -1
-                    else:
-                        final_score = 0
+                    final_score = 0
+                if len(dir_seq[hand]) > 0 and dir_seq[hand][-1] != final_score:
                     dir_seq[hand].append(final_score)
+                elif len(dir_seq[hand]) <= 0:
+                    dir_seq[hand].append(final_score)
+        dir_seq["left"] = MATH_FUNC.remove_intermittent_zeros(dir_seq["left"])
+        dir_seq["right"] = MATH_FUNC.remove_intermittent_zeros(dir_seq["right"])
         return dir_seq
 
+    def dtw_similarity_score(self, seq1, seq2):
+        """計算兩序列的 DTW 相似度，回傳 0 ~ 100 分"""
+        n, m = len(seq1), len(seq2)
+        s1 = np.array(seq1).reshape(-1, 1)
+        s2 = np.array(seq2).reshape(-1, 1)
+
+        # 1. 成本矩陣 (兩點數值差的絕對值)
+        cost = cdist(s1, s2, metric="cityblock")
+
+        # 2. 動態規劃累計距離
+        dtw = np.zeros((n + 1, m + 1))
+        dtw[0, :] = np.inf
+        dtw[:, 0] = np.inf
+        dtw[0, 0] = 0
+
+        for i in range(1, n + 1):
+            for j in range(1, m + 1):
+                dtw[i, j] = cost[i - 1, j - 1] + min(
+                    dtw[i - 1, j],  # 插入
+                    dtw[i, j - 1],  # 刪除
+                    dtw[i - 1, j - 1],  # 匹配
+                )
+
+        # 3. 依總路徑步數正規化平均距離
+        avg_distance = dtw[n, m] / (n + m)
+
+        # 4. 映射到 0~100 分 (avg_distance 越接近 0 分數越高)
+        score = np.exp(-1.5 * avg_distance) * 100
+        return round(float(score), 2)
+
     def count_score(self, norm_data):
+        print(f"action4\n\n\n")
         space_x, space_y, time_x, time_y = MATH_FUNC.coordinate_data_extractor(norm_data, self.config)
         time_section_info = MATH_FUNC.section_info_extractor(time_x, time_y)
         start_info_y = time_section_info["start_info_y"]
         finish_info_y = time_section_info["finish_info_y"]
 
         # region score count # 0905
-        dir_seq = Action4.judge_palm_orientation(space_x["hand"], space_y["hand"])
+        dir_seq = self.judge_palm_orientation(space_x["hand"], space_y["hand"])
         print(f"Action 4: dir_seq = {dir_seq}")
+        self.score[0] = self.dtw_similarity_score(dir_seq["left"], dir_seq["right"])
+
 
         start_pos = int(start_info_y["pose"][15][0])
         finish_pos = int(finish_info_y["pose"][15][0])
@@ -1409,7 +1452,6 @@ class Action14:
                     wrong += 1
             score_temp.append((len(movie_sequence[model]) - wrong) / len(movie_sequence[model]) * 100)
         self.score[0] = max(0, np.array(score_temp).mean())
-        print(f"action14 score1: {self.score[0]}")
         # score2
         score_temp = []
         for model in space_y.keys():
@@ -1540,7 +1582,6 @@ class Action15:
             score_temp.append((len(movie_sequence_y[model]) - wrong) / len(movie_sequence_y[model]) * 100)
         # print(f"score1 {np.array(score_temp).mean()}")
         self.score[0] = max(0, np.array(score_temp).mean())
-        print(f"action15 score1: {self.score[0]}")
         # score2
         score_temp = []
         coef = np.corrcoef(space_y["pose"][27], space_y["pose"][28])[0, 1]
