@@ -2,10 +2,12 @@ import os
 from turtledemo.penrose import start
 
 import cv2
+import math
 import numpy as np
 import mediapipe as mp
 from scipy.signal import savgol_filter
 from scipy.spatial.distance import cdist
+
 # data_structure
 # data[frame]["pose"or"face"]["pose"=>0~32or"face"=>0~467]['x'or'y']
 # data[frame]["hand"]["left"or"right"][0~20]['x'or'y']
@@ -468,7 +470,7 @@ class MATH_FUNC:
                 "move_sequence_y" : move_sequence_y,
                 "point_sequence_x" : point_sequence_x,
                 "point_sequence_y" : point_sequence_y}
-    @ staticmethod
+    @staticmethod
     def remove_intermittent_zeros(seq):
         """
         輸入: [0, -1, 0, -1, 0, 1, 0, -1, 0, 1, 0]
@@ -755,7 +757,6 @@ class Action4:
         return round(float(score), 2)
 
     def count_score(self, norm_data):
-        print(f"action4\n\n\n")
         space_x, space_y, time_x, time_y = MATH_FUNC.coordinate_data_extractor(norm_data, self.config)
         time_section_info = MATH_FUNC.section_info_extractor(time_x, time_y)
         start_info_y = time_section_info["start_info_y"]
@@ -763,7 +764,6 @@ class Action4:
 
         # region score count # 0905
         dir_seq = self.judge_palm_orientation(space_x["hand"], space_y["hand"])
-        print(f"Action 4: dir_seq = {dir_seq}")
         self.score[0] = self.dtw_similarity_score(dir_seq["left"], dir_seq["right"])
 
 
@@ -796,8 +796,7 @@ class Action5:
 
     def count_score(self, norm_data):
         # region feature_extraction
-        space_x = MATH_FUNC.space_position(norm_data, self.config, "x")
-        # space_y = MATH_FUNC.space_position(norm_data, self.config, "y")
+        space_x, space_y, time_x, time_y = MATH_FUNC.coordinate_data_extractor(norm_data, self.config)
         # endregion
         dist_15_16 = (np.array(space_x["pose"][15]) - np.array(space_x["pose"][16]))
         dist_16_15 = (np.array(space_x["pose"][16]) - np.array(space_x["pose"][15]))
@@ -836,29 +835,35 @@ class Action5:
         norm_data = mdp.get_data(self.video_path, list(self.config.keys()))
         self.count_score(norm_data)
 
-# 補
 class Action6:
     def __init__(self, path):
-        self.config = {'pose': [15, 16]}
+        self.config = {'pose': [0, 15, 16]}
         self.video_path = path
-        self.score = [0, 0]
-        self.score_type = ["1", "2", "3"]
+        self.score = [0, 0, 0]
+        # [手臂張開確認, 空間相關, 時間相關]
 
     def count_score(self, norm_data):
         #region feature_extraction
-        space_x = MATH_FUNC.space_position(norm_data, self.config, "x")
-        time_x = MATH_FUNC.time_speed(space_x)
+        space_x, space_y, time_x, time_y = MATH_FUNC.coordinate_data_extractor(norm_data, self.config)
         #endregion
+        data_length = len(space_x['pose'][0])
+        left_dist = []
+        right_dist = []
+        for i in range(data_length):
+            left_dist.append(math.dist([space_x["pose"][15][i], space_y["pose"][15][i]], [space_x["pose"][0][i], space_y["pose"][0][i]]))
+            right_dist.append(math.dist([space_x["pose"][16][i], space_y["pose"][16][i]], [space_x["pose"][0][i], space_y["pose"][0][i]]))
+        coef = MATH_FUNC.find_maximal_cc(np.array(left_dist), np.array(right_dist))
+        self.score[0] = abs(coef * 100)
 
         #region count score
         #score1
         coef = MATH_FUNC.find_maximal_cc(np.array(space_x["pose"][16])*-1, np.array(space_x["pose"][15]))
         # print(f"score1 {abs(coef * 100)}")
-        self.score[0] = abs(coef * 100)
+        self.score[1] = abs(coef * 100)
         #score2
         coef = MATH_FUNC.find_maximal_cc(np.array(time_x["pose"][16])*-1, np.array(time_x["pose"][15]))
         # print(f"score2 {abs(coef * 100)}")
-        self.score[1]= abs(coef * 100)
+        self.score[2]= abs(coef * 100)
         #end region
 
     def main_func(self):
@@ -866,19 +871,27 @@ class Action6:
         norm_data = mdp.get_data(self.video_path, list(self.config.keys()))
         self.count_score(norm_data)
 
-# 補
 class Action7:
     def __init__(self, path):
-        self.config = {'pose': [15, 16]}
+        self.config = {'pose': [0, 15, 16]}
         self.video_path = path
-        self.score = [0, 0]
+        self.score = [0, 0, 0]
+        # [手臂張開確認, 空間相關, 時間相關]
 
     def count_score(self, norm_data):
         #region feature_extraction
-        space_x = MATH_FUNC.space_position(norm_data, self.config, "x")
-        space_y = MATH_FUNC.space_position(norm_data, self.config, "y")
-        time_x = MATH_FUNC.time_speed(space_x)
-        time_y = MATH_FUNC.time_speed(space_y)
+        space_x, space_y, time_x, time_y = MATH_FUNC.coordinate_data_extractor(norm_data, self.config)
+
+        data_length = len(space_x['pose'][0])
+        left_dist = []
+        right_dist = []
+        for i in range(data_length):
+            left_dist.append(math.dist([space_x["pose"][15][i], space_y["pose"][15][i]],
+                                       [space_x["pose"][0][i], space_y["pose"][0][i]]))
+            right_dist.append(math.dist([space_x["pose"][16][i], space_y["pose"][16][i]],
+                                        [space_x["pose"][0][i], space_y["pose"][0][i]]))
+        coef = MATH_FUNC.find_maximal_cc(np.array(left_dist), np.array(right_dist))
+        self.score[0] = abs(coef * 100)
         #endregion
 
         #region count score
@@ -886,12 +899,12 @@ class Action7:
         coef_x = MATH_FUNC.find_maximal_cc(np.array(space_x["pose"][16]) * -1, np.array(space_x["pose"][15]))
         coef_y = MATH_FUNC.find_maximal_cc(np.array(space_y["pose"][16]), np.array(space_y["pose"][15]))
         # print(f"score1 {abs(coef * 100)}")
-        self.score[0] = abs(np.mean([coef_y, coef_x]) * 100)
+        self.score[1] = abs(np.mean([coef_y, coef_x]) * 100)
         #score2
         coef_x = MATH_FUNC.find_maximal_cc(np.array(time_x["pose"][16]) * -1, time_x["pose"][15])
         coef_y = MATH_FUNC.find_maximal_cc(time_y["pose"][16], time_y["pose"][15])
         # print(f"score2 {abs(coef * 100)}")
-        self.score[1]= abs(np.mean(np.mean([coef_y, coef_x])) * 100)
+        self.score[2]= abs(np.mean(np.mean([coef_y, coef_x])) * 100)
         #end region
 
     def main_func(self):
@@ -899,33 +912,34 @@ class Action7:
         norm_data = mdp.get_data(self.video_path, list(self.config.keys()))
         self.count_score(norm_data)
 
-# 補
 class Action8:
     def __init__(self, path):
-        self.config = {'pose': [15, 16]}
+        self.config = {'pose': [0, 15, 16]}
         self.video_path = path
-        self.score = [0, 0]
+        self.score = [0, 0, 0]
 
     def count_score(self, norm_data):
-        # region feature_extraction
-        space_x = MATH_FUNC.space_position(norm_data, self.config, "x")
-        space_y = MATH_FUNC.space_position(norm_data, self.config, "y")
-        time_x = MATH_FUNC.time_speed(space_x)
-        time_y = MATH_FUNC.time_speed(space_y)
-        # endregion
+        space_x, space_y, time_x, time_y = MATH_FUNC.coordinate_data_extractor(norm_data, self.config)
 
-        # region count score
-        # score1
+        data_length = len(space_x['pose'][0])
+        left_dist = []
+        right_dist = []
+        for i in range(data_length):
+            left_dist.append(math.dist([space_x["pose"][15][i], space_y["pose"][15][i]],
+                                       [space_x["pose"][0][i], space_y["pose"][0][i]]))
+            right_dist.append(math.dist([space_x["pose"][16][i], space_y["pose"][16][i]],
+                                        [space_x["pose"][0][i], space_y["pose"][0][i]]))
+        coef = MATH_FUNC.find_maximal_cc(np.array(left_dist), np.array(right_dist))
+        self.score[0] = abs(coef * 100)
+
         coef_x = MATH_FUNC.find_maximal_cc(np.array(space_x["pose"][16]) * -1, np.array(space_x["pose"][15]))
         coef_y = MATH_FUNC.find_maximal_cc(np.array(space_y["pose"][16]), np.array(space_y["pose"][15]))
-        # print(f"score1 {abs(coef * 100)}")
-        self.score[0] = abs(np.mean([coef_y, coef_x]) * 100)
-        # score2
+        self.score[1] = abs(np.mean([coef_y, coef_x]) * 100)
         coef_x = MATH_FUNC.find_maximal_cc(np.array(time_x["pose"][16]) * -1, time_x["pose"][15])
         coef_y = MATH_FUNC.find_maximal_cc(time_y["pose"][16], time_y["pose"][15])
-        # print(f"score2 {abs(coef * 100)}")
-        self.score[1] = abs(np.mean(np.mean([coef_y, coef_x])) * 100)
-        # end region
+
+        self.score[2] = abs(np.mean(np.mean([coef_y, coef_x])) * 100)
+
 
     def main_func(self):
         mdp = MDP()
@@ -1320,19 +1334,32 @@ class Action11:
 # 補
 class Action12:
     def __init__(self, path):
-        self.config = {'pose': [15, 16, 27, 28]}
+        self.config = {'pose': [0, 15, 16, 27, 28]}
         self.video_path = path
-        self.score = [0 for _ in range(2)]
+        self.score = [0, 0, 0]
 
     def count_score(self, norm_data):
-        # region feature_extraction
-        space_x = MATH_FUNC.space_position(norm_data, self.config, "x")
-        space_y = MATH_FUNC.space_position(norm_data, self.config, "y")
-        time_x = MATH_FUNC.time_speed(space_x)
-        time_y = MATH_FUNC.time_speed(space_y)
-        # endregion
+        space_x, space_y, time_x, time_y = MATH_FUNC.coordinate_data_extractor(norm_data, self.config)
 
-        # region count score
+        data_length = len(space_x['pose'][0])
+        left_hand_dist = []
+        right_hand_dist = []
+        left_foot_dist = []
+        right_foot_dist = []
+        for i in range(data_length):
+            left_hand_dist.append(math.dist([space_x["pose"][15][i], space_y["pose"][15][i]],
+                                       [space_x["pose"][0][i], space_y["pose"][0][i]]))
+            right_hand_dist.append(math.dist([space_x["pose"][16][i], space_y["pose"][16][i]],
+                                        [space_x["pose"][0][i], space_y["pose"][0][i]]))
+            left_foot_dist.append(math.dist([space_x["pose"][27][i], space_y["pose"][27][i]],
+                                       [space_x["pose"][0][i], space_y["pose"][0][i]]))
+            right_foot_dist.append(math.dist([space_x["pose"][28][i], space_y["pose"][28][i]],
+                                        [space_x["pose"][0][i], space_y["pose"][0][i]]))
+
+        hand_coef = MATH_FUNC.find_maximal_cc(np.array(left_hand_dist), np.array(right_hand_dist))
+        foot_coef = MATH_FUNC.find_maximal_cc(np.array(left_foot_dist), np.array(right_foot_dist))
+        self.score[0] = abs((hand_coef+foot_coef)/2 * 100)
+
         # score1
         # hand
         coef_hand_x = MATH_FUNC.find_maximal_cc(np.array(space_x["pose"][16]) * -1, np.array(space_x["pose"][15]))
@@ -1340,14 +1367,14 @@ class Action12:
         # leg
         coef_leg_x = MATH_FUNC.find_maximal_cc(np.array(space_x["pose"][28]) * -1, np.array(space_x["pose"][27]))
         coef_leg_y = MATH_FUNC.find_maximal_cc(np.array(space_y["pose"][28]), np.array(space_y["pose"][27]))
-        self.score[0] = abs(np.mean([coef_hand_x, coef_hand_y, coef_leg_x, coef_leg_y])) * 100
+        self.score[1] = abs(np.mean([coef_hand_x, coef_hand_y, coef_leg_x, coef_leg_y])) * 100
         # score2
         coef_hand_x = MATH_FUNC.find_maximal_cc(np.array(time_x["pose"][16]) * -1, np.array(time_x["pose"][15]))
         coef_hand_y = MATH_FUNC.find_maximal_cc(np.array(time_y["pose"][16]), np.array(time_y["pose"][15]))
         # leg
         coef_leg_x = MATH_FUNC.find_maximal_cc(np.array(time_x["pose"][28]) * -1, np.array(time_x["pose"][27]))
         coef_leg_y = MATH_FUNC.find_maximal_cc(np.array(time_y["pose"][28]), np.array(time_y["pose"][27]))
-        self.score[1] = abs(np.mean([coef_hand_x, coef_hand_y, coef_leg_x, coef_leg_y])) * 100
+        self.score[2] = abs(np.mean([coef_hand_x, coef_hand_y, coef_leg_x, coef_leg_y])) * 100
         # endregion
 
     def main_func(self):
@@ -1355,33 +1382,37 @@ class Action12:
         norm_data = mdp.get_data(self.video_path, list(self.config.keys()))
         self.count_score(norm_data)
 
-# 補
 class Action13:
     def __init__(self, path):
-        self.config = {'pose': [15, 16]}
+        self.config = {'pose': [0, 15, 16]}
         self.video_path = path
-        self.score = [0 for _ in range(2)]
+        self.score = [0, 0, 0]
 
     def count_score(self, norm_data):
-        # region feature_extraction
-        space_x = MATH_FUNC.space_position(norm_data, self.config, "x")
-        space_y = MATH_FUNC.space_position(norm_data, self.config, "y")
-        time_x = MATH_FUNC.time_speed(space_x)
-        time_y = MATH_FUNC.time_speed(space_y)
-        # endregion
+        space_x, space_y, time_x, time_y = MATH_FUNC.coordinate_data_extractor(norm_data, self.config)
 
-        # region count score
+        data_length = len(space_x['pose'][0])
+        left_dist = []
+        right_dist = []
+        for i in range(data_length):
+            left_dist.append(math.dist([space_x["pose"][15][i], space_y["pose"][15][i]],
+                                            [space_x["pose"][0][i], space_y["pose"][0][i]]))
+            right_dist.append(math.dist([space_x["pose"][16][i], space_y["pose"][16][i]],
+                                             [space_x["pose"][0][i], space_y["pose"][0][i]]))
+
+        hand_coef = MATH_FUNC.find_maximal_cc(np.array(left_dist), np.array(right_dist))
+        self.score[0] = abs(hand_coef * 100)
+
         # score1
         coef_x = MATH_FUNC.find_maximal_cc(np.array(space_x["pose"][16]) * -1, np.array(space_x["pose"][15]))
         coef_y = MATH_FUNC.find_maximal_cc(np.array(space_y["pose"][16]), np.array(space_y["pose"][15]))
         # print(f"score1 {abs(coef * 100)}")
-        self.score[0] = abs(np.mean([coef_y, coef_x])) * 100
+        self.score[1] = abs(np.mean([coef_y, coef_x])) * 100
         # score2
         coef_x = MATH_FUNC.find_maximal_cc(np.array(time_x["pose"][16]) * -1, time_x["pose"][15])
         coef_y = MATH_FUNC.find_maximal_cc(time_y["pose"][16], time_y["pose"][15])
         # print(f"score2 {abs(coef * 100)}")
-        self.score[1] = abs(np.mean(np.mean([coef_y, coef_x]))) * 100
-        # endregion
+        self.score[2] = abs(np.mean(np.mean([coef_y, coef_x]))) * 100
 
     def main_func(self):
         mdp = MDP()
